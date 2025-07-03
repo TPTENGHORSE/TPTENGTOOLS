@@ -1,0 +1,33 @@
+usar el archivo llamado Base_EMB y la hoja Informe 1, detallo los nombres de las columnas:
+- Reference: contiene codigos de piezas, 
+- Packaging Code:codigo de packaging,
+- Nb pieces par UC: cantidad de piezas por UC, donde UC es una caja, 
+- Qté / UC: esto es cantidad de piezas por UC,
+Length (mm),	 Width (mm),	 Height (mm) y	 Folded Height (mm)	son DIMENSIONES DE LOS UC, ç
+- Weight EMPTY (kg): esto es peso del UC vacio, 
+- Part Weight (kg): esto es peso de cada pieza.
+
+Características de la herramienta:
+- Permite elegir el tipo de contenedor (igual que en Empower3D.py)
+- permite ingresar manualmente el numero de apilamiento: Stacking
+- Permite seleccionar el Packaging code de una lista desplegable, si no encuentra el requerido, permite elegir uno que debe llamarse Manual.
+-Debe tener una opción de elegir si el Packaging code esta plegado (folded) (yes/no, esta bien)
+- Al encontrar el Packaging code, debe mostrar las dimensiones y pesos del packaging elegido
+- Si no encuentra el Packaging code, se elige el Manual y permite ingresar dimensiones y pesos manualmente, permite editar y eliminar
+- Los dato mostrados al elegir el packaging code de la lista o introducirlo manual debe mostrar en la UI: Packaging Code,Nb pieces par UC, Qté / UC, Length (mm), Width (mm)	 Height (mm): solo folded No, Folded Height (mm): solo si esta en folded Yes, Weight EMPTY (kg)	Part Weight (kg)
+
+- Permite agregar multiples Packaging code, permite ingresar manualmente la cantidad de packaging por cada código de packaging code
+-Muestra el peso total y volumen total de los Packaging code agregados
+- tiene un botón Calcular
+- al dar click a Calcular, ejecuta el programa de optimización de carga, y calcula el numero de UC optimo combinado con diferentes packaging code que pueden entrar en un contenedor (toma las dimensiones internas, operativas y peso de los tipos de contenedores de Empower3D.py )
+- Muestra el %de zaturacion de peso, %saturacion de volumen, estos calculos son en base al total de UC otimas
+-El calculo de UC optimas debe ser equitativo, es decir debe incluir todos los codigos de packagingm debe indicar la cantidad de packaging que ingresan por contenedor
+
+Dibujo 3D
+- Mostrar el dibujo 3D de forma nitida,
+- la representacion del contenedor debe ser rectangular con un verdadero contenedor
+- Las cajas no deben desbordar las dimensiones ni peso del contenedor
+- Las cajas deben ordenarse por niveles, no pueden apilarse sin cubrir la maxima area del primer nivel, luego pasar al nivel 2 igualmente cubrir su maxima area y asi sucesivamente ir subiendo de nivel de apilamiento.
+No overlap
+
+

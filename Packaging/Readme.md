@@ -1,4 +1,4 @@
-# 📦 Container 3D App
+# 📦 Empower 3D App
 
 Aplicación interactiva en Streamlit para calcular cuántas cajas caben en un contenedor marítimo, considerando rotaciones y saturaciones de volumen y peso. Incluye visualización 3D.
 

@@ -1,5 +1,7 @@
 streamlit
-numpy
+plotly
 matplotlib
-pillow
-### st.title("📦 Empower³")
+openpyxl
+pandas
+numpy
+py3dbp

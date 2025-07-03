@@ -1,0 +1,33 @@
+tengo los siguientes archivos: Base_EMB, cifrados Overseas-Inland, LEAD_TIME_FINAL y Plantilla_Quotation.
+Con estos 4 archivos necesito crear un programa que me permita realizar cotizaciones y diferentes calculos.
+primero debes leer los datos de plantilla_quotation que sera la entrada (input) que llenaremos con multiples
+lineas.
+#1 Calculo de Distancias:
+Usa la logica de Distances.py para el calulo de distancias, que vendran de el archivo plantilla_quotation debes leer el Origin Country y Origin City, tambien el Destination Country y 
+el Destination City, para calular en backend la distancia en km entre los puntos indicados, esta distancia debe ser ajustada con un 
+30% más para simular una distancia por carretera. 
+Ademas cuando se tengan las columnas llamadas POL y POD, POL= puerto de carga y POD= puerto destino, 
+se debe cacular distancia entre origin city y POL, tambien de POD a Destination City.
+Cuando se tenga solo Origin Country y Origin City y el Destination Country y el Destination City, alular en backend la distancia en km entre los puntos indicados, esta distancia debe ser ajustada con un 
+30% más para simular una distancia por carretera. 
+
+#2 Calcular volumen y pesos
+Para calcular el volumen de cada Part Number (PN) debes tomar Packaging Code de la plantilla_quotation, buscar este Packaging code 
+en el fichero Base_EMB para obtener el volumen (lenghtxwidthxheight),debes calcular cuantos Packaging Code ingresaran en un contenedor de 40HC
+este calculo debes obtenerlo tal cual se tiene en Packaging/Empower3D.py, el peso del total de las partes debes tomarlo de PN Weight del
+fichero Plantilla_Quotation, el peso del Packaging code sale de la columna  Weight EMPTY (kg) y debe sumar a total del PN weight.
+
+#3 Costo transporte Inland
+De acuerdo al pais donde se realice el transporte terrestre se debe tomar el valor de Eur/km del archivo cifrados Overseas-Inland
+cuando no se tenga datos en pol y pod, signica que es 100% un transporte inland, 
+
+#4 Costo transporte Overseas
+cuando se tenga POL y POD significa que es un transporte que contienen overseas,
+en este caso las tarifas de POL a POD debes tomarlas del archivo RATES_04_2025 Columna Rate 40ft all-in,
+y sumarla al costo de transporte Inland 
+
+#5 Total Transport Cost
+en este step, debes sumar el Transporte Inland + Transporte overseas
+Debes devolver un fichero con los datos de la Plantilla_Quotation mas las columnas de Inland Cost, Overseas Cost y Total Transportation Cost
+
+Trabaja en streamlit, agrega al menu de app.py, el fichero que generes debe poder descargarse.
