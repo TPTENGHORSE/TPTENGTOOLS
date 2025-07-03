@@ -3,6 +3,7 @@
 venv/
 
 # Ignorar archivos temporales
+TPTENGTOOLS/
 __pycache__/
 *.pyc
 *.pyo
