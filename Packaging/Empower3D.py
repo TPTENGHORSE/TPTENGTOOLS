@@ -7,19 +7,25 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 # Dimensiones internas (volumen bruto)
 DIMENSIONES_INTERNAS = {
     "40 HC": (12032, 2352, 2700),
-    "20 Ft Std": (5898, 2352, 2393)
+    "20 Ft Std": (5898, 2352, 2393),
+    "Truck 40m3": (7000, 2400, 2400),
+    "Mega Trailer 100m3": (13620, 2480, 2900)
 }
 
 # Dimensiones operativas reales para cálculo de UCM
 DIMENSIONES_OPERATIVAS = {
     "20 Ft Std": (5898, 2352, 2243),
-    "40 HC": (12032, 2352, 2550)
+    "40 HC": (12032, 2352, 2550),
+    "Truck 40m3": (7000, 2400, 2300),
+    "Mega Trailer 100m3": (13620, 2480, 2800)
 }
 
 # Peso máximo por contenedor
 PESOS_MAXIMOS = {
     "20 Ft Std": 25200,
-    "40 HC": 24750
+    "40 HC": 24750,
+    "Truck 40m3": 12000,
+    "Mega Trailer 100m3": 32800
 }
 
 # Solo rotaciones permitidas en eje X e Y (altura fija)
@@ -122,7 +128,41 @@ def main():
             box_height = st.number_input("Height (mm)", min_value=1, value=850)
         with col4:
             box_weight = st.number_input("Weight PN + UCM (kg)", min_value=0.01, value=150.0, format="%.1f")
-        max_stacking = st.number_input("Max stacking UCM", min_value=1, value=2)
+        
+        # Calculate maximum possible stackability based on current dimensions
+        operative_dim = DIMENSIONES_OPERATIVAS[container_sel]
+        box_dim = (box_length, box_width, box_height)
+        _, _, (nl, nw, nh) = calcula_cajas(operative_dim, box_dim, 9999)
+        max_stacking_possible = nh
+        
+        # Stackability with custom display format
+        st.write("Stackability")
+        col_stack1, col_stack2, col_stack3 = st.columns([1, 2, 1])
+        
+        # Initialize session state for stackability (starting with 0/1)
+        if "stackability_value" not in st.session_state:
+            st.session_state.stackability_value = 0
+        
+        # Ensure stackability doesn't exceed 99/1
+        if st.session_state.stackability_value > 99:
+            st.session_state.stackability_value = 99
+        
+        with col_stack1:
+            if st.button("➖", key="stack_minus"):
+                if st.session_state.stackability_value > 0:
+                    st.session_state.stackability_value -= 1
+        
+        with col_stack2:
+            # Display format: 0/1, 1/1, 2/1, 3/1, etc.
+            display_text = f"{st.session_state.stackability_value}/1"
+            st.markdown(f"<div style='text-align: center; padding: 8px; border: 1px solid #ccc; border-radius: 4px; background-color: white;'>{display_text}</div>", unsafe_allow_html=True)
+        
+        with col_stack3:
+            if st.button("➕", key="stack_plus"):
+                if st.session_state.stackability_value < 99:  # Maximum limit is 99/1
+                    st.session_state.stackability_value += 1
+        
+        max_stacking = st.session_state.stackability_value + 1  # Convert from #/1 format to actual stacking value
         calculate = st.button("Calculate")
 
         # Show results between the inputs and the chart
@@ -138,7 +178,9 @@ def main():
             _, _, (nl, nw, nh) = calcula_cajas(operative_dim, box_dim, 9999)
             max_stacking_possible = nh
             if max_stacking > max_stacking_possible:
-                st.warning(f"⚠️ The maximum stacking for this configuration is {max_stacking_possible}. Value adjusted.")
+                # Convert to #/1 format for the warning message
+                max_stackability_display = max_stacking_possible - 1
+                st.warning(f"⚠️ The maximum stacking for this configuration is {max_stackability_display}/1. Value adjusted.")
             total_by_volume, rotation, distribution = calcula_cajas(operative_dim, box_dim, min(max_stacking, max_stacking_possible))
             box_volume = (rotation[0] / 1000) * (rotation[1] / 1000) * (rotation[2] / 1000)
             total_usable_volume = box_volume * total_by_volume
