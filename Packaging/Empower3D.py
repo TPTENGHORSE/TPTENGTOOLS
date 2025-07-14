@@ -6,25 +6,25 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 # Dimensiones internas (volumen bruto)
 DIMENSIONES_INTERNAS = {
-    "40 HC": (12032, 2352, 2700),
-    "20 Ft Std": (5898, 2352, 2393),
-    "Truck 40m3": (7000, 2400, 2400),
+    "Container 40 HC": (12032, 2352, 2700),
+    "Container 20 Ft Std": (5898, 2352, 2393),
+    "Trailer 40m3": (7000, 2400, 2400),
     "Mega Trailer 100m3": (13620, 2480, 2900)
 }
 
 # Dimensiones operativas reales para cálculo de UCM
 DIMENSIONES_OPERATIVAS = {
-    "20 Ft Std": (5898, 2352, 2243),
-    "40 HC": (12032, 2352, 2550),
-    "Truck 40m3": (7000, 2400, 2300),
+    "Container 20 Ft Std": (5898, 2352, 2243),
+    "Container 40 HC": (12032, 2352, 2550),
+    "Trailer 40m3": (7000, 2400, 2300),
     "Mega Trailer 100m3": (13620, 2480, 2800)
 }
 
 # Peso máximo por contenedor
 PESOS_MAXIMOS = {
-    "20 Ft Std": 25200,
-    "40 HC": 24750,
-    "Truck 40m3": 12000,
+    "Container 20 Ft Std": 25200,
+    "Container 40 HC": 24750,
+    "Trailer 40m3": 12000,
     "Mega Trailer 100m3": 32800
 }
 
@@ -118,7 +118,7 @@ def main():
     col_left, col_right = st.columns([1.1, 1.3])
 
     with col_left:
-        container_sel = st.selectbox("Select container type", list(DIMENSIONES_INTERNAS.keys()))
+        container_sel = st.selectbox("Select container/truck type", list(DIMENSIONES_INTERNAS.keys()))
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             box_length = st.number_input("Length (mm)", min_value=1, value=1140)
