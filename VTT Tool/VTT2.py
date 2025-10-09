@@ -1100,16 +1100,7 @@ table_html += "</tbody></table>"
 wrapped_html = f"<div id='timeline_capture' style='display:inline-block'>{table_html}</div>"
 st.markdown(wrapped_html, unsafe_allow_html=True)
 
-# Controles de Timeline al final (sin mover la tabla de gantt)
-st.subheader("Timeline")
-st.slider(
-    "Days to Show",
-    min_value=7,
-    max_value=150,
-    value=st.session_state.get("days_slider_timeline", 100),
-    step=1,
-    key="days_slider_timeline",
-)
+
 
 # --- KPIs al final ---
 st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
@@ -1184,6 +1175,16 @@ with col_value3:
         )
     else:
         st.info("No existe la columna Safety stock o no hay coincidencia.")
+# Controles de Timeline al final (sin mover la tabla de gantt)
+st.subheader("Timeline")
+st.slider(
+    "Days to Show",
+    min_value=7,
+    max_value=150,
+    value=st.session_state.get("days_slider_timeline", 100),
+    step=1,
+    key="days_slider_timeline",
+)
 
 # --- Descargar Excel con la visualización completa ---
 def _hex_to_fill(hex_color):

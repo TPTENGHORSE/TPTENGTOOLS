@@ -9,8 +9,7 @@ st.set_page_config(page_title="Transport Engineering Tools", layout="wide")
 # Sidebar menu as buttons with session state to persist selection
 logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
 st.sidebar.image(logo_path, width=120)
-# Only two menu options as requested
-menu_options = ["Empower3D", "VTTs"]
+menu_options = ["VTTs", "Empower3D"]
 if "active_menu" not in st.session_state:
     st.session_state["active_menu"] = menu_options[0]
 for option in menu_options:
