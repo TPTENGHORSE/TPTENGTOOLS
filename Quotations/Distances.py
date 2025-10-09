@@ -9,14 +9,14 @@ def get_location(place):
     Devuelve el objeto de ubicación de una ciudad/puerto.
     """
     try:
-        location = geolocator.geocode(place, timeout=10)
+        location = geolocator.geocode(place, timeout=5)
         time.sleep(1)  # Evitar bloqueo de Nominatim
         return location
     except Exception as e:
         print(f"❌ Error geocoding '{place}': {e}")
         return None
 
-def calcular_distancia(origen, destino, factor_ajuste=1.3):
+def calcular_distancia(origen, destino, factor_ajuste=1.30):
     """
     Calcula la distancia geodésica entre dos lugares.
     Usa un factor opcional para simular ruta real (por carretera).
@@ -33,10 +33,10 @@ def calcular_distancia(origen, destino, factor_ajuste=1.3):
     distancia_km = geodesic(coords1, coords2).km
     return distancia_km * factor_ajuste  # Ruta estimada
 
-# 🚀 Ejemplo de uso
+# Ejemplo de uso
 if __name__ == "__main__":
-    origen = "Valladolid, Spain"
-    destino = "Puerto de Valencia, España"
+    origen = "Osaka, Japon"
+    destino = "Tokyo, Japon"
     distancia = calcular_distancia(origen, destino)
 
     if distancia:

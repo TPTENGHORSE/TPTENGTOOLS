@@ -5,7 +5,12 @@ openpyxl
 pandas
 numpy
 py3dbp
+rapidfuzz
 
 # git add .
 # git commit -m "Describe tus cambios"
 # git push
+
+#python -m streamlit run app.py
+
+#(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit

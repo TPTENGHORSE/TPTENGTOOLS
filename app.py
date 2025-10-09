@@ -4,11 +4,13 @@ import importlib.util
 import sys
 import os
 
-st.set_page_config(page_title="Transport Engineering Tools", layout="centered")
+st.set_page_config(page_title="Transport Engineering Tools", layout="wide")
 
 # Sidebar menu as buttons with session state to persist selection
-st.sidebar.image("logo.png", width=120)
-menu_options = ["Main menu", "Empower3D"]
+logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+st.sidebar.image(logo_path, width=120)
+# Only two menu options as requested
+menu_options = ["Empower3D", "VTTs"]
 if "active_menu" not in st.session_state:
     st.session_state["active_menu"] = menu_options[0]
 for option in menu_options:
@@ -16,19 +18,7 @@ for option in menu_options:
         st.session_state["active_menu"] = option
 menu = st.session_state["active_menu"]
 
-if menu == "Main menu":
-    # Use Streamlit layout only, no custom divs, for perfect centering and no scroll
-    st.empty()  # Clear any previous content
-    st.write("")  # Spacer
-    # Center logo above the title using columns for perfect horizontal centering
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        st.image("logo.png", width=400)
-    st.markdown("<h1 style='text-align: center;'>Transport Engineering Tools</h1>", unsafe_allow_html=True)
-    st.write("")  # Spacer
-    st.write("")  # More space if needed
-
-elif menu == "Empower3D":
+if menu == "Empower3D":
     empower3d_path = os.path.join(os.path.dirname(__file__), "Packaging", "Empower3D.py")
     if os.path.exists(empower3d_path):
         spec = importlib.util.spec_from_file_location("Empower3D", empower3d_path)
@@ -39,4 +29,28 @@ elif menu == "Empower3D":
     else:
         st.error("Empower3D.py not found")
 
+elif menu == "VTTs":
+    # Integrate the VTT timeline app (VTT Tool/VTT2.py) into this main app
+    vtt2_path = os.path.join(os.path.dirname(__file__), "VTT Tool", "VTT2.py")
+    if os.path.exists(vtt2_path):
+        try:
+            # Avoid multiple set_page_config calls by temporarily no-op'ing it
+            orig_set_pc = getattr(st, "set_page_config", None)
+            if callable(orig_set_pc):
+                st.set_page_config = lambda *args, **kwargs: None  # type: ignore
+            spec = importlib.util.spec_from_file_location("VTT2", vtt2_path)
+            vtt2 = importlib.util.module_from_spec(spec)
+            sys.modules["VTT2"] = vtt2
+            assert spec and spec.loader
+            spec.loader.exec_module(vtt2)
+        except Exception as e:
+            st.error(f"Error loading VTT2 app: {e}")
+            st.exception(e)
+        finally:
+            # Restore original set_page_config
+            if 'orig_set_pc' in locals() and callable(orig_set_pc):
+                st.set_page_config = orig_set_pc  # type: ignore
+    else:
+        st.error("VTT2.py not found in 'VTT Tool' folder")
 
+    # No other menu entries
