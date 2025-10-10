@@ -17,8 +17,8 @@ from openpyxl.utils import get_column_letter
 
 def render_box(label, value):
     return f"""
-    <div style='font-weight:bold; margin-bottom:2px; font-size:13px; white-space:nowrap;'>{label}</div>
-    <div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; min-width:80px; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; display:inline-block;' title='{value}'>{value}</div>
+    <div style='font-weight:bold; margin-bottom:8px; font-size:13px;'>{label}</div>
+    <div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; max-width:220px; min-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px;' title='{value}'>{value}</div>
     """
 
 def _coerce_to_int(val):
@@ -151,11 +151,9 @@ with col_info:
     else:
         row = None
 
-    # Mostrar Carrier, Shipper, ILN, Planty ID en una fila debajo de los filtros, formato más compacto y wide
-    st.markdown("<div style='height: 5px'></div>", unsafe_allow_html=True)
-    col_id, col_carrier, col_shipper, col_iln, col_plant, col_flowtype, col_comodity = st.columns(
-        [2, 2, 2, 2, 2, 2, 2], gap="medium"
-    )
+    # Mostrar Carrier, Shipper, ILN, Plant, E/D y ID en una fila debajo de los filtros
+    st.markdown("<div style='height: 16px'></div>", unsafe_allow_html=True)
+    col_id, col_carrier, col_shipper, col_iln, col_plant, col_ed = st.columns([1, 1, 1, 1, 1, 1], gap="medium")
     with col_id:
         if row is not None and 'ID' in df_vtt.columns:
             st.markdown(render_box('ID', row['ID']), unsafe_allow_html=True)
@@ -188,23 +186,25 @@ with col_info:
             st.info("No se pudo leer la columna I (ILN) o no hay coincidencia.")
     with col_plant:
         if row is not None and 'Name Destin Site' in df_vtt.columns:
-            st.markdown(render_box('Plant', row['Name Destin Site']), unsafe_allow_html=True)
+            st.markdown(render_box('PLANT', row['Name Destin Site']), unsafe_allow_html=True)
         else:
-            st.info("No existe la columna Plant o no hay coincidencia.")
-    with col_flowtype:
-        flowtype_col = 'Flow Type '
-        if row is not None and flowtype_col in df_vtt.columns:
-            flowtype_val = row[flowtype_col]
-            st.markdown(render_box('Flow Type', flowtype_val), unsafe_allow_html=True)
+            st.info("No existe la columna Name Destin Site o no hay coincidencia.")
+    with col_ed:
+        if row is not None and 'Expiration Date' in df_vtt.columns:
+            exp_date = row['Expiration Date']
+            if pd.notnull(exp_date):
+                if isinstance(exp_date, (pd.Timestamp, datetime)):
+                    exp_date_str = exp_date.strftime('%d/%m/%Y')
+                else:
+                    try:
+                        exp_date_str = pd.to_datetime(exp_date).strftime('%d/%m/%Y')
+                    except Exception:
+                        exp_date_str = str(exp_date)
+            else:
+                exp_date_str = ""
+            st.markdown(render_box('E/D', exp_date_str), unsafe_allow_html=True)
         else:
-            st.info("No existe la columna Flow Type o no hay coincidencia.")
-    with col_comodity:
-        comodity_col = 'Comodity'
-        if row is not None and comodity_col in df_vtt.columns:
-            comodity_val = row[comodity_col]
-            st.markdown(render_box('Comodity', comodity_val), unsafe_allow_html=True)
-        else:
-            st.info("No existe la columna Comodity o no hay coincidencia.")
+            st.info("No existe la columna Expiration Date o no hay coincidencia.")
 
 # KPIs movidos al final
 
@@ -1504,22 +1504,6 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     wb.save(bio)
     bio.seek(0)
     return bio.getvalue()
-
-# Mostrar E/D debajo de todo, horizontal
-st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
-if row is not None and 'Expiration Date' in df_vtt.columns:
-    exp_date = row['Expiration Date']
-    if pd.notnull(exp_date):
-        if isinstance(exp_date, (pd.Timestamp, datetime)):
-            exp_date_str = exp_date.strftime('%d/%m/%Y')
-        else:
-            try:
-                exp_date_str = pd.to_datetime(exp_date).strftime('%d/%m/%Y')
-            except Exception:
-                exp_date_str = str(exp_date)
-    else:
-        exp_date_str = ""
-    st.markdown(f"<div style='font-weight:bold; font-size:18px;'>E/D&nbsp;&nbsp;{exp_date_str}</div>", unsafe_allow_html=True)
 
 # Botón de descarga Excel (preparamos bytes y base64)
 excel_bytes = build_excel_workbook(
