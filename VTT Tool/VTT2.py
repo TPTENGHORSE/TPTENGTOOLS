@@ -70,6 +70,9 @@ st.markdown(
         padding-left: 1rem !important;
         padding-right: 1rem !important;
         max-width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: auto !important;
+        text-align: left !important;
     }
     header[data-testid="stHeader"] {
         height: 0px !important;

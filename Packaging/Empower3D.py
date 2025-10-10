@@ -113,7 +113,13 @@ def draw_box(ax, origin, l, w, h, color='orange', alpha=1.0):
 def main():
     # logo = Image.open("logo.png")
     # st.image(logo, width=110)
-    st.markdown("<h1 style='text-align: center;'>📦 Empower<sup>3D</sup></h1>  v1.0", unsafe_allow_html=True)
+    st.markdown("""
+        <style>
+        .block-container {text-align: left !important;}
+        h1, h2, h3, h4, h5, h6, p, div {text-align: left !important;}
+        </style>
+    """, unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: left;'>📦 Empower<sup>3D</sup></h1>  v1.0", unsafe_allow_html=True)
 
     col_left, col_right = st.columns([1.1, 1.3])
 
