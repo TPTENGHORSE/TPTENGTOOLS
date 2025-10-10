@@ -1195,6 +1195,14 @@ def _hex_to_fill(hex_color):
         h = 'FF' + h.upper()
     return PatternFill(fill_type='solid', start_color=h, end_color=h)
 
+# --- Desactivar gridlines en el Excel exportado ---
+
+# --- existing code ---
+    # ...existing code...
+    wb = Workbook()
+    ws = wb.active
+    # ...existing code...
+
 def _compute_week_spans(days):
     spans = []
     current_week = None
@@ -1361,7 +1369,8 @@ def _day_value_for_step(i, row, df_vtt):
 def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days):
     wb = Workbook()
     ws = wb.active
-    ws.title = 'Timeline'
+    ws.title = 'VTT__HORSE'
+    # NOTA: Para una vista limpia sin cuadrícula, desactiva "View Gridlines" manualmente en Excel (openpyxl no puede forzar esto).
 
     # styles
     bold = Font(bold=True)
