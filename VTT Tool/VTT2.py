@@ -1531,24 +1531,23 @@ if row is not None and 'Expiration Date' in df_vtt.columns:
     st.markdown(f"<div style='font-weight:bold; font-size:18px;'>E/D&nbsp;&nbsp;{exp_date_str}</div>", unsafe_allow_html=True)
 
 # Botón de descarga Excel (preparamos bytes y base64)
-excel_bytes = build_excel_workbook(
-    row=row,
-    df_vtt=df_vtt,
-    selected_pol=st.session_state.get('pol_select',''),
-    selected_pod=st.session_state.get('pod_select',''),
-    time_labels=time_labels,
-    headers=headers,
-    timeline_days=timeline_days,
-)
-excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
-st.markdown(f"<div id='excel_b64' data-b64='{excel_b64}' style='display:none'></div>", unsafe_allow_html=True)
-
-# --- Botón para captura de pantalla (al final) ---
-components.html(
+if st.button("Generate Files", help="Descarga el Excel con los filtros actuales"):
+    excel_bytes = build_excel_workbook(
+        row=row,
+        df_vtt=df_vtt,
+        selected_pol=st.session_state.get('pol_select',''),
+        selected_pod=st.session_state.get('pod_select',''),
+        time_labels=time_labels,
+        headers=headers,
+        timeline_days=timeline_days,
+    )
+    excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
+    st.markdown(f"<div id='excel_b64' data-b64='{excel_b64}' style='display:none'></div>", unsafe_allow_html=True)
+    components.html(
         """
         <div style='margin:24px 0; text-align:center;'>
-                        <a id=\"excelBtn\" href=\"#\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:8px;\">Excel file</a>
-                        <button id=\"captureBtn\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;\">Descargar PNG</button>
+            <a id=\"excelBtn\" href=\"#\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:8px;\">Excel file</a>
+            <button id=\"captureBtn\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;\">Imagegi</button>
         </div>
         <script src=\"https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js\"></script>
         <script>
