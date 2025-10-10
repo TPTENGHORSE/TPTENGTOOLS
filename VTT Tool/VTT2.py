@@ -70,9 +70,6 @@ st.markdown(
         padding-left: 1rem !important;
         padding-right: 1rem !important;
         max-width: 100% !important;
-        margin-left: 0 !important;
-        margin-right: auto !important;
-        text-align: left !important;
     }
     header[data-testid="stHeader"] {
         height: 0px !important;
@@ -1198,14 +1195,6 @@ def _hex_to_fill(hex_color):
         h = 'FF' + h.upper()
     return PatternFill(fill_type='solid', start_color=h, end_color=h)
 
-# --- Desactivar gridlines en el Excel exportado ---
-
-# --- existing code ---
-    # ...existing code...
-    wb = Workbook()
-    ws = wb.active
-    # ...existing code...
-
 def _compute_week_spans(days):
     spans = []
     current_week = None
@@ -1372,8 +1361,7 @@ def _day_value_for_step(i, row, df_vtt):
 def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days):
     wb = Workbook()
     ws = wb.active
-    ws.title = 'VTT__HORSE'
-    # NOTA: Para una vista limpia sin cuadrícula, desactiva "View Gridlines" manualmente en Excel (openpyxl no puede forzar esto).
+    ws.title = 'Timeline'
 
     # styles
     bold = Font(bold=True)
@@ -1534,23 +1522,24 @@ if row is not None and 'Expiration Date' in df_vtt.columns:
     st.markdown(f"<div style='font-weight:bold; font-size:18px;'>E/D&nbsp;&nbsp;{exp_date_str}</div>", unsafe_allow_html=True)
 
 # Botón de descarga Excel (preparamos bytes y base64)
-if st.button("Generate Files", help="Descarga el Excel con los filtros actuales"):
-    excel_bytes = build_excel_workbook(
-        row=row,
-        df_vtt=df_vtt,
-        selected_pol=st.session_state.get('pol_select',''),
-        selected_pod=st.session_state.get('pod_select',''),
-        time_labels=time_labels,
-        headers=headers,
-        timeline_days=timeline_days,
-    )
-    excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
-    st.markdown(f"<div id='excel_b64' data-b64='{excel_b64}' style='display:none'></div>", unsafe_allow_html=True)
-    components.html(
+excel_bytes = build_excel_workbook(
+    row=row,
+    df_vtt=df_vtt,
+    selected_pol=st.session_state.get('pol_select',''),
+    selected_pod=st.session_state.get('pod_select',''),
+    time_labels=time_labels,
+    headers=headers,
+    timeline_days=timeline_days,
+)
+excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
+st.markdown(f"<div id='excel_b64' data-b64='{excel_b64}' style='display:none'></div>", unsafe_allow_html=True)
+
+# --- Botón para captura de pantalla (al final) ---
+components.html(
         """
         <div style='margin:24px 0; text-align:center;'>
-            <a id=\"excelBtn\" href=\"#\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:8px;\">Excel file</a>
-            <button id=\"captureBtn\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;\">Imagegi</button>
+                        <a id=\"excelBtn\" href=\"#\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:8px;\">Excel file</a>
+                        <button id=\"captureBtn\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;\">Descargar PNG</button>
         </div>
         <script src=\"https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js\"></script>
         <script>
