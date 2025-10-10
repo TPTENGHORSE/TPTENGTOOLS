@@ -5,18 +5,6 @@ import sys
 import os
 
 st.set_page_config(page_title="Transport Engineering Tools", layout="wide")
-st.markdown("""
-    <style>
-    .main .block-container {
-        text-align: left !important;
-        margin-left: 0 !important;
-        margin-right: auto !important;
-    }
-    h1, h2, h3, h4, h5, h6, p, div {
-        text-align: left !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 # Sidebar menu as buttons with session state to persist selection
 logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
