@@ -15,7 +15,7 @@ def run():
     """, unsafe_allow_html=True)
 
     OLLAMA_URL = "http://localhost:11434/api/chat"
-    OLLAMA_MODEL = "llama3.2:1b"  # Smaller model that uses less RAM
+    OLLAMA_MODEL = "llama3"
 
     # Session state for chat history
     if "messages" not in st.session_state:
@@ -63,8 +63,3 @@ def run():
             st.markdown(f"<div style='text-align: right; color: #1a73e8;'><b>You:</b> {msg['content']}</div>", unsafe_allow_html=True)
         else:
             st.markdown(f"<div style='text-align: left; color: #34a853;'><b>HorseLuis:</b> {msg['content']}</div>", unsafe_allow_html=True)
-
-# Allow running this file independently
-if __name__ == "__main__":
-    st.set_page_config(page_title="HorseLuis Chatbot", layout="centered")
-    run()

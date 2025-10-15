@@ -1,4 +1,3 @@
-
 streamlit
 plotly
 matplotlib
@@ -7,9 +6,6 @@ pandas
 numpy
 py3dbp
 rapidfuzz
-requests
-pillow
-geopy
 
 # git add .
 # git commit -m "Describe tus cambios"
@@ -18,4 +14,4 @@ geopy
 #python -m streamlit run app.py
 #.venv\Scripts\pip install matplotlib
 
-#PRIMERO ESTO (.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit
+#(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit

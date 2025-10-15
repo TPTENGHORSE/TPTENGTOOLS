@@ -18,7 +18,7 @@ from openpyxl.utils import get_column_letter
 def render_box(label, value):
     return f"""
     <div style='font-weight:bold; margin-bottom:8px; font-size:13px;'>{label}</div>
-    <div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; max-width:220px; min-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px;' title='{value}'>{value}</div>
+    <div style='padding:3px 5px; border:1px solid #eee; border-radius:4px; background:#fafafa; width:100%; max-width:none; min-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px;' title='{value}'>{value}</div>
     """
 
 def _coerce_to_int(val):
@@ -69,12 +69,19 @@ st.markdown(
         padding-top: 0.5rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
-        max-width: 100% !important;
+        max-width: 80% !important;
     }
     header[data-testid="stHeader"] {
         height: 0px !important;
         min-height: 0px !important;
         padding: 0 !important;
+    }
+    /* vertical text utility for date headers */
+    .vtt-vertical-text {
+        display: inline-block;
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+        white-space: nowrap;
     }
     </style>
     """,
@@ -151,21 +158,28 @@ with col_info:
     else:
         row = None
 
-    # Mostrar Carrier, Shipper, ILN, Plant, E/D y ID en una fila debajo de los filtros
-    st.markdown("<div style='height: 16px'></div>", unsafe_allow_html=True)
-    col_id, col_carrier, col_shipper, col_iln, col_plant, col_ed = st.columns([1, 1, 1, 1, 1, 1], gap="medium")
-    with col_id:
+    # E/D se muestra más abajo del timeline y antes del botón Generate files
+
+# KPIs movidos al final
+
+# --- TIMELINE (Gantt stays here; controls will be rendered below) ---
+st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
+
+# Render the info row (ID, Carrier, Shipper, ILN, PLANT) in the wide column
+with col_timeline:
+    st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
+    info_cols = st.columns([1.0, 1.2, 1.2, 1.0, 1.0], gap="medium")
+    with info_cols[0]:
         if row is not None and 'ID' in df_vtt.columns:
             st.markdown(render_box('ID', row['ID']), unsafe_allow_html=True)
         else:
             st.info("No existe la columna ID o no hay coincidencia.")
-    with col_carrier:
+    with info_cols[1]:
         if row is not None and 'Carrier' in df_vtt.columns:
             st.markdown(render_box('Carrier', row['Carrier']), unsafe_allow_html=True)
         else:
             st.info("No existe la columna Carrier o no hay coincidencia.")
-    with col_shipper:
-        # Shipper: tomar valor desde columna K (índice 10)
+    with info_cols[2]:
         if row is not None and len(df_vtt.columns) > 10:
             try:
                 col_k = df_vtt.columns[10]
@@ -174,8 +188,7 @@ with col_info:
                 st.info("No se pudo leer la columna K (Shipper) o no hay coincidencia.")
         else:
             st.info("No se pudo leer la columna K (Shipper) o no hay coincidencia.")
-    with col_iln:
-        # ILN: tomar valor desde columna I (índice 8)
+    with info_cols[3]:
         if row is not None and len(df_vtt.columns) > 8:
             try:
                 col_i = df_vtt.columns[8]
@@ -184,32 +197,11 @@ with col_info:
                 st.info("No se pudo leer la columna I (ILN) o no hay coincidencia.")
         else:
             st.info("No se pudo leer la columna I (ILN) o no hay coincidencia.")
-    with col_plant:
+    with info_cols[4]:
         if row is not None and 'Name Destin Site' in df_vtt.columns:
             st.markdown(render_box('PLANT', row['Name Destin Site']), unsafe_allow_html=True)
         else:
             st.info("No existe la columna Name Destin Site o no hay coincidencia.")
-    with col_ed:
-        if row is not None and 'Expiration Date' in df_vtt.columns:
-            exp_date = row['Expiration Date']
-            if pd.notnull(exp_date):
-                if isinstance(exp_date, (pd.Timestamp, datetime)):
-                    exp_date_str = exp_date.strftime('%d/%m/%Y')
-                else:
-                    try:
-                        exp_date_str = pd.to_datetime(exp_date).strftime('%d/%m/%Y')
-                    except Exception:
-                        exp_date_str = str(exp_date)
-            else:
-                exp_date_str = ""
-            st.markdown(render_box('E/D', exp_date_str), unsafe_allow_html=True)
-        else:
-            st.info("No existe la columna Expiration Date o no hay coincidencia.")
-
-# KPIs movidos al final
-
-# --- TIMELINE (Gantt stays here; controls will be rendered below) ---
-st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
 
 time_cols_fixed = 4
 today = datetime.today()
@@ -256,16 +248,18 @@ table_html += "</tr>"
 table_html += "<tr>"
 for idx_h, h in enumerate(headers):
     if idx_h == 0:
-        table_html += f"<th style='padding:6px 8px; border:1px solid #eee; min-width:240px; text-align:left; background:#f5f5f5; white-space:nowrap'>{h}</th>"
+        table_html += f"<th style='padding:5px 7px; border:1px solid #eee; min-width:200px; text-align:center; background:#f5f5f5; white-space:nowrap'>{h}</th>"
     else:
-        table_html += f"<th style='padding:6px 8px; border:1px solid #eee; min-width:50px; width:50px; text-align:center; background:#f5f5f5'>{h}</th>"
+        table_html += f"<th style='padding:5px 7px; border:1px solid #eee; min-width:50px; width:50px; text-align:center; background:#f5f5f5'>{h}</th>"
 for idx, day in enumerate(timeline_days):
     # Colorear sábados y domingos
     if day.weekday() in [5, 6]:
-        th_style = "padding:0 1px; border:1px solid #eee; min-width:50px; width:28px; text-align:center; background:#ffd6d6; font-size:12px"
+        th_style = "padding:0 1px; border:1px solid #eee; min-width:15px; width:18px; height:50px; text-align:center; background:#ffd6d6; font-size:12px; vertical-align:bottom;"
     else:
-        th_style = "padding:0 1px; border:1px solid #eee; min-width:50px; width:28px; text-align:center; background:#e3eafc; font-size:12px"
-    table_html += f"<th style='{th_style}'>{day.strftime('%d-%b')}</th>"
+        th_style = "padding:0 1px; border:1px solid #eee; min-width:20px; width:20px; height:50px; text-align:center; background:#e3eafc; font-size:12px; vertical-align:bottom;"
+    # Wrap the date in a vertical text span
+    vertical_label = day.strftime('%d-%b')
+    table_html += f"<th style='{th_style}'><span class='vtt-vertical-text'>{vertical_label}</span></th>"
 table_html += "</tr></thead><tbody>"
 
 # Etiquetas de filas
@@ -290,15 +284,18 @@ time_labels = [
 
 time_rows = len(time_labels)
 for i in range(time_rows):
+    # Reduce row height ~35% (15px -> ~10px)
     table_html += "<tr style='height:15px;'>"
     for j in range(time_cols):
         cell_content = ""
         # Alinear la primera columna (etiquetas) a la izquierda
         if j == 0:
             # Steps column: make it wider and prevent wrapping
-            cell_style = "padding:4px 6px; border:1px solid #eee; text-align:left; font-weight:bold; background:#f5f5f5; min-width:240px; white-space:nowrap;"
+            cell_style = "padding:4px 6px; border:1px solid #eee; text-align:left; font-weight:bold; background:#f5f5f5; min-width:200px; white-space:nowrap;"
         else:
             cell_style = "padding:4px 6px; border:1px solid #eee; text-align:center;"
+        # Compactar altura y padding en todas las celdas de steps (≈ -35%)
+        cell_style += "height:15px; line-height:15px; padding:1px 4px;"
         # Colorear sábados y domingos en las celdas de fechas
         if j >= 4:
             fecha_actual = timeline_days[j-4] if (j-4) < len(timeline_days) else None
@@ -659,8 +656,8 @@ for i in range(time_rows):
                 else:
                     cell_content = "-"
             elif j == 2:  # Day+
-                if row is not None and 'Time for security2 buffer' in df_vtt.columns:
-                    val = row['Time for security2 buffer']
+                if row is not None and 'Time for security' in df_vtt.columns:
+                    val = row['Time for security']
                     if pd.isna(val):
                         cell_content = "-"
                     elif val == 0:
@@ -693,7 +690,7 @@ for i in range(time_rows):
                         if pd.isna(bnum):
                             m = re.findall(r"[-+]?\d*\.?\d+", str(base)) if base is not None else []
                             bnum = float(m[0]) if m else float('nan')
-                        plus = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+                        plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
                         if not pd.isna(bnum):
                             cell_content = str(int(float(bnum)) + 1 + int(plus))
                     except Exception:
@@ -706,7 +703,7 @@ for i in range(time_rows):
                         dias_final_day = int(row['10 Days flexibility 1'])
                 except Exception:
                     dias_final_day = 0
-                day_plus_val = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+                day_plus_val = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
                 paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
@@ -734,8 +731,17 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
-            elif j == 2:  # Day+ (no buffer específico definido -> 0)
-                cell_content = "0"
+            elif j == 2:  # Day+ usa Time for security2 buffer
+                if row is not None and 'Time for security2 buffer' in df_vtt.columns:
+                    val = row['Time for security2 buffer']
+                    if pd.isna(val):
+                        cell_content = "-"
+                    elif val == 0:
+                        cell_content = "0"
+                    else:
+                        cell_content = str(val)
+                else:
+                    cell_content = "0"
             elif j == 3:  # Final Day
                 if row is not None and '11 Days flexibility 2' in df_vtt.columns:
                     val = row['11 Days flexibility 2']
@@ -752,8 +758,9 @@ for i in range(time_rows):
                     dias_final_day = int(row['11 Days flexibility 2']) if row is not None and '11 Days flexibility 2' in df_vtt.columns else 0
                 except Exception:
                     dias_final_day = 0
-                # Day+ = 0 -> pintar solo el último día
-                paint_len = 1
+                # Pintado basado en Time for security2 buffer
+                day_plus_val = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+                paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
@@ -1097,8 +1104,9 @@ for i in range(time_rows):
     table_html += "</tr>"
 
 table_html += "</tbody></table>"
-wrapped_html = f"<div id='timeline_capture' style='display:inline-block'>{table_html}</div>"
-st.markdown(wrapped_html, unsafe_allow_html=True)
+# Render visible table as before, but with a distinct id to avoid capture conflicts
+wrapped_html_visible = f"<div id='timeline_capture_table' style='display:inline-block'>{table_html}</div>"
+st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 
 
 
@@ -1186,6 +1194,103 @@ st.slider(
     key="days_slider_timeline",
 )
 
+# Build an off-screen composite capture area that includes table + KPIs + selection context
+capture_pol = st.session_state.get('pol_select','')
+capture_pod = st.session_state.get('pod_select','')
+capture_days = st.session_state.get('days_slider_timeline', 100)
+composite_html = ""
+composite_html += "<div id='timeline_capture' style='position:absolute; left:-100000px; top:0; background:#fff; padding:8px; font-family:Arial, sans-serif; display:inline-block; width:max-content; max-width:none; overflow:visible;'>"
+composite_html += "<div style='font-size:22px; font-weight:700; margin-bottom:8px;'>VTT View</div>"
+composite_html += f"<div style='margin-bottom:8px;'><b>POL:</b> {capture_pol} &nbsp;&nbsp; <b>POD:</b> {capture_pod} &nbsp;&nbsp; <b>Days to Show:</b> {capture_days}</div>"
+
+# Add ID, Carrier, Shipper, ILN, PLANT row (E/D irá abajo del timeline)
+_id_val = _carrier_val = _shipper_val = _iln_val = _plant_val = _ed_val = ""
+if row is not None:
+    try:
+        _id_val = str(row.get('ID', '')) if 'ID' in df_vtt.columns else ''
+    except Exception:
+        _id_val = ''
+    try:
+        _carrier_val = str(row.get('Carrier', '')) if 'Carrier' in df_vtt.columns else ''
+    except Exception:
+        _carrier_val = ''
+    # Shipper from column K (index 10) if present
+    try:
+        _shipper_col = df_vtt.columns[10] if len(df_vtt.columns) > 10 else None
+        _shipper_val = str(row.get(_shipper_col, '')) if _shipper_col and _shipper_col in df_vtt.columns else ''
+    except Exception:
+        _shipper_val = ''
+    # ILN from column I (index 8) if present
+    try:
+        _iln_col = df_vtt.columns[8] if len(df_vtt.columns) > 8 else None
+        _iln_val = str(row.get(_iln_col, '')) if _iln_col and _iln_col in df_vtt.columns else ''
+    except Exception:
+        _iln_val = ''
+    try:
+        _plant_val = str(row.get('Name Destin Site', '')) if 'Name Destin Site' in df_vtt.columns else ''
+    except Exception:
+        _plant_val = ''
+
+composite_html += "<div style='display:grid; grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; gap:6px 12px; align-items:center; margin:6px 0 10px 0;'>"
+composite_html += f"<div style='font-weight:bold;'>ID:</div><div>{_id_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>Carrier:</div><div>{_carrier_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>Shipper:</div><div>{_shipper_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>ILN:</div><div>{_iln_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>PLANT:</div><div>{_plant_val}</div>"
+composite_html += "</div>"
+
+# Wrap the table to allow full-width capture (no fixed width)
+composite_html += f"<div style='display:inline-block; width:max-content; overflow:visible;'>{table_html}</div>"
+
+# E/D debajo del timeline en el PNG
+try:
+    if row is not None and 'Expiration Date' in df_vtt.columns:
+        _exp_date = row.get('Expiration Date', '')
+        if pd.notnull(_exp_date):
+            if isinstance(_exp_date, (pd.Timestamp, datetime)):
+                _ed_val = _exp_date.strftime('%d/%m/%Y')
+            else:
+                try:
+                    _ed_val = pd.to_datetime(_exp_date).strftime('%d/%m/%Y')
+                except Exception:
+                    _ed_val = str(_exp_date)
+        else:
+            _ed_val = ''
+    composite_html += f"<div style='margin:8px 0 4px 0;'>{render_box('E/D', _ed_val)}</div>"
+except Exception:
+    pass
+composite_html += "<hr style='margin:16px 0;'>"
+composite_html += "<div style='font-size:18px; font-weight:700; margin-bottom:8px;'>KPIs</div>"
+composite_html += "<div style='display:grid; grid-template-columns: 220px 1fr; row-gap:6px; column-gap:12px;'>"
+composite_html += "<div style='font-weight:bold;'>Parts Vanning</div>"
+if row is not None and "Parts Vanning" in df_vtt.columns:
+    composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Parts Vanning']}</div>"
+else:
+    composite_html += "<div>-</div>"
+composite_html += "<div style='font-weight:bold;'>Transit Time</div>"
+_tt_display = None
+if row is not None:
+    _t1 = pd.to_numeric(row.get('Transit time', None), errors='coerce') if 'Transit time' in df_vtt.columns else None
+    _t2 = pd.to_numeric(row.get('Time for security', None), errors='coerce') if 'Time for security' in df_vtt.columns else None
+    _parts = [v for v in (_t1, _t2) if v is not None and pd.notna(v)]
+    if _parts:
+        _sum = float(sum(_parts))
+        _tt_display = int(_sum) if abs(_sum - int(_sum)) < 1e-9 else round(_sum, 2)
+composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{_tt_display if _tt_display is not None else '-'}</div>"
+composite_html += "<div style='font-weight:bold;'>Customer Leadtime</div>"
+if row is not None and 'Cust. Leadtime' in df_vtt.columns:
+    composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Cust. Leadtime']}</div>"
+else:
+    composite_html += "<div>-</div>"
+composite_html += "<div style='font-weight:bold;'>Customer Safety STOCK</div>"
+if row is not None and 'Safety stock' in df_vtt.columns:
+    composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Safety stock']}</div>"
+else:
+    composite_html += "<div>-</div>"
+composite_html += "</div>"  # end grid
+composite_html += "</div>"  # end capture root
+st.markdown(composite_html, unsafe_allow_html=True)
+
 # --- Descargar Excel con la visualización completa ---
 def _hex_to_fill(hex_color):
     if not hex_color:
@@ -1259,7 +1364,7 @@ def _final_day_for_step(i, row, df_vtt):
             if pd.isna(bnum):
                 m = re.findall(r"[-+]?\d*\.?\d+", str(base)) if base is not None else []
                 bnum = float(m[0]) if m else float('nan')
-            plus = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+            plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
             return int(float(bnum)) + 1 + int(plus) if not pd.isna(bnum) else 0
         if i == 10:
             return int(row['11 Days flexibility 2']) if row is not None and '11 Days flexibility 2' in df_vtt.columns else 0
@@ -1282,7 +1387,7 @@ def _final_day_for_step(i, row, df_vtt):
         return 0
 
 def _day_plus_for_step(i, row, df_vtt):
-    if i in (0,1,5,6,7,10):
+    if i in (0,1,5,6,7):
         return 0
     if i == 2:
         return _coerce_to_int(row['3 .1 Time of Recept in ILN']) if row is not None and '3 .1 Time of Recept in ILN' in df_vtt.columns else 0
@@ -1293,6 +1398,8 @@ def _day_plus_for_step(i, row, df_vtt):
     if i == 8:
         return _coerce_to_int(row['Transit time']) if row is not None and 'Transit time' in df_vtt.columns else 0
     if i == 9:
+        return _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
+    if i == 10:
         return _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
     if i == 11:
         return _coerce_to_int(row['Cust.']) if row is not None and 'Cust.' in df_vtt.columns else 0
@@ -1421,11 +1528,17 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
         cell = ws.cell(row=r, column=ci, value=d.strftime('%d-%b'))
         cell.fill = weekendfill if d.weekday() in (5,6) else weekdayfill
         cell.border = border
-        cell.alignment = Alignment(horizontal='center')
+        # Rotate text vertically (top-to-bottom)
+        cell.alignment = Alignment(horizontal='center', vertical='bottom', textRotation=90)
     r += 1
 
     # Row content
     for i, label in enumerate(time_labels):
+        # Reduce Excel row height for step rows (~35% smaller than default ~15pt)
+        try:
+            ws.row_dimensions[r+i].height = 10.5
+        except Exception:
+            pass
         ws.cell(row=r+i, column=1, value=label).fill = hfill
         ws.cell(row=r+i, column=1).font = bold
         ws.cell(row=r+i, column=1).border = border
@@ -1448,8 +1561,8 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
         # Paint date cells
         paint_len = day_plus if (isinstance(day_plus, int) and day_plus > 0) else 1
-        if i in (0,1,5,6,7,10):
-            paint_len = 1  # Day+ = 0 -> only final day
+        if i in (0,1,5,6,7):
+            paint_len = 1  # Day+ = 0 -> only final day for these steps
         start_idx = max(1, fday - paint_len + 1) if fday else 0
         for idx, d in enumerate(timeline_days, start=0):
             ci = start_col + idx
@@ -1471,7 +1584,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     ws.column_dimensions['C'].width = 10
     ws.column_dimensions['D'].width = 12
     for k in range(start_col, start_col + len(timeline_days)):
-        ws.column_dimensions[get_column_letter(k)].width = 6
+        ws.column_dimensions[get_column_letter(k)].width = 4
 
     # KPIs block under the table
     rr = r + len(time_labels) + 2
@@ -1505,133 +1618,96 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     bio.seek(0)
     return bio.getvalue()
 
-# Botón de descarga Excel (preparamos bytes y base64)
-excel_bytes = build_excel_workbook(
-    row=row,
-    df_vtt=df_vtt,
-    selected_pol=st.session_state.get('pol_select',''),
-    selected_pod=st.session_state.get('pod_select',''),
-    time_labels=time_labels,
-    headers=headers,
-    timeline_days=timeline_days,
-)
-excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
-st.markdown(f"<div id='excel_b64' data-b64='{excel_b64}' style='display:none'></div>", unsafe_allow_html=True)
 
-# --- Botón para captura de pantalla (al final) ---
-components.html(
+
+# --- Mostrar E/D debajo del timeline y antes del botón Generate files ---
+st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
+try:
+    _ed_display = ""
+    if row is not None and 'Expiration Date' in df_vtt.columns:
+        _exp_date = row.get('Expiration Date', '')
+        if pd.notnull(_exp_date):
+            if isinstance(_exp_date, (pd.Timestamp, datetime)):
+                _ed_display = _exp_date.strftime('%d/%m/%Y')
+            else:
+                try:
+                    _ed_display = pd.to_datetime(_exp_date).strftime('%d/%m/%Y')
+                except Exception:
+                    _ed_display = str(_exp_date)
+    st.markdown(render_box('E/D', _ed_display), unsafe_allow_html=True)
+except Exception:
+    pass
+
+# --- Single 'Generate files' button, then show download buttons in English ---
+st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
+if st.button("Generate files", key="generate_files"):
+    excel_bytes = build_excel_workbook(
+        row=row,
+        df_vtt=df_vtt,
+        selected_pol=st.session_state.get('pol_select',''),
+        selected_pod=st.session_state.get('pod_select',''),
+        time_labels=time_labels,
+        headers=headers,
+        timeline_days=timeline_days,
+    )
+    excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
+    st.markdown(f"""
+    <div style='width:100%; display:flex; justify-content:center; align-items:center; margin:32px 0;'>
+        <a id='excelBtn' href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_b64}' download='VTT_FULL_VIEW.xlsx' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:24px;'>Excel file</a>
+        <button id='imgBtn' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;'>Image</button>
+    </div>
+    """, unsafe_allow_html=True)
+    components.html(
         """
-        <div style='margin:24px 0; text-align:center;'>
-                        <a id=\"excelBtn\" href=\"#\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:8px;\">Excel file</a>
-                        <button id=\"captureBtn\" style=\"display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;\">Descargar PNG</button>
-        </div>
-        <script src=\"https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js\"></script>
+        <script src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'></script>
         <script>
         (function(){
-                        // Wire Excel link from hidden DIV data
-                        try {
-                            const parentDoc = window.parent?.document || document;
-                            const hidden = parentDoc.getElementById('excel_b64');
-                            const excelB64 = hidden?.dataset?.b64 || '';
-                            const excelLink = document.getElementById('excelBtn');
-                            if (excelLink && excelB64) {
-                                const ts = new Date().toISOString().slice(0,10);
-                                excelLink.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + excelB64;
-                                excelLink.download = 'VTT_FULL_VIEW_' + ts + '.xlsx';
-                            }
-                        } catch (e) { /* no-op */ }
-
-            const btn = document.getElementById('captureBtn');
-            btn?.addEventListener('click', async () => {
-                try {
-                    const parentDoc = window.parent?.document || document;
-                    const root = parentDoc.documentElement;
-                    const body = parentDoc.body || root;
-                    const width = Math.max(root.scrollWidth, body.scrollWidth || 0, root.clientWidth);
-                    const height = Math.max(root.scrollHeight, body.scrollHeight || 0, root.clientHeight);
-
-                    // Límite seguro típico de bitmap en navegadores
-                    const MAX_DIM = 16384;
-                    let scale = 2;
-                    if (width * scale > MAX_DIM) scale = Math.max(1, Math.floor(MAX_DIM / width));
-                    if (height * scale > MAX_DIM) scale = Math.min(scale, Math.floor(MAX_DIM / height));
-
-                    // Si aún excede, aplicar captura en mosaico vertical para evitar cortes
-                    const needTiling = (height * scale > MAX_DIM) || (width * scale > MAX_DIM);
-                    if (!needTiling) {
-                        const canvas = await html2canvas(root, {
-                            useCORS: true,
-                            allowTaint: true,
-                            backgroundColor: '#ffffff',
-                            windowWidth: width,
-                            windowHeight: height,
-                            width: width,
-                            height: height,
-                            scrollX: 0,
-                            scrollY: 0,
-                            scale: scale
-                        });
-                        canvas.toBlob(function(blob){
-                            if(!blob){ alert('No se pudo generar la imagen'); return; }
-                            const url = URL.createObjectURL(blob);
-                            const a = parentDoc.createElement('a');
-                            const ts = new Date().toISOString().slice(0,19).replace(/[.:T]/g,'-');
-                            a.href = url;
-                            a.download = 'VTTFULL_VIEW_'+ts+'.png';
-                            parentDoc.body.appendChild(a);
-                            a.click();
-                            setTimeout(() => { parentDoc.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
-                        }, 'image/png', 0.95);
-                        return;
-                    }
-
-                    // Mosaico vertical
-                    const tileH = 1800; // px CSS por segmento
-                    const tiles = [];
-                    for (let y = 0; y < height; y += tileH) {
-                        const thisH = Math.min(tileH, height - y);
-                        const part = await html2canvas(root, {
-                            useCORS: true,
-                            allowTaint: true,
-                            backgroundColor: '#ffffff',
-                            windowWidth: width,
-                            windowHeight: thisH,
-                            width: width,
-                            height: thisH,
-                            scrollX: 0,
-                            scrollY: y,
-                            scale: 1
-                        });
-                        tiles.push({ canvas: part, h: thisH });
-                    }
-                    const finalCanvas = parentDoc.createElement('canvas');
-                    finalCanvas.width = Math.floor(width * scale);
-                    finalCanvas.height = Math.floor(height * scale);
-                    const ctx = finalCanvas.getContext('2d');
-                    let drawY = 0;
-                    for (const t of tiles) {
-                        const dw = Math.floor(t.canvas.width * scale);
-                        const dh = Math.floor(t.canvas.height * scale);
-                        ctx.drawImage(t.canvas, 0, drawY, dw, dh);
-                        drawY += dh;
-                    }
-                    finalCanvas.toBlob(function(blob){
-                        if(!blob){ alert('No se pudo generar la imagen'); return; }
-                        const url = URL.createObjectURL(blob);
-                        const a = parentDoc.createElement('a');
-                        const ts = new Date().toISOString().slice(0,19).replace(/[.:T]/g,'-');
-                        a.href = url;
-                        a.download = 'VTT_UI_FULL_'+ts+'.png';
-                        parentDoc.body.appendChild(a);
-                        a.click();
-                        setTimeout(() => { parentDoc.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
-                    }, 'image/png', 0.95);
-                } catch (err) {
-                    alert('Error creando la captura: ' + err);
-                }
-            });
+            function parentDoc(){
+                try { return window.parent && window.parent.document ? window.parent.document : document; } catch(e){ return document; }
+            }
+            function getBtn(){ return parentDoc().getElementById('imgBtn'); }
+            function getArea(){
+                var d = parentDoc();
+                // Prefer off-screen composite that includes all data and KPIs
+                return d.getElementById('timeline_capture') || d.getElementById('timeline_capture_table') || d.body || document.body;
+            }
+            function ensureHtml2CanvasReady(cb){
+                if (window.html2canvas) return cb();
+                var tries = 0; (function waitLib(){
+                    if (window.html2canvas) return cb();
+                    if (++tries > 50) { alert('html2canvas no cargó.'); return; }
+                    setTimeout(waitLib, 100);
+                })();
+            }
+            function bind(){
+                var button = getBtn();
+                if (!button) { setTimeout(bind, 250); return; }
+                button.addEventListener('click', function(){
+                    ensureHtml2CanvasReady(function(){
+                        var area = getArea();
+                        if (!area) { alert('No se encontró el área visual para capturar.'); return; }
+                        window.html2canvas(area, { backgroundColor:'#fff', useCORS:true, allowTaint:true, scale:2 })
+                        .then(function(canvas){
+                            canvas.toBlob(function(blob){
+                                if(!blob){ alert('No se pudo generar la imagen'); return; }
+                                var d = parentDoc();
+                                var url = URL.createObjectURL(blob);
+                                var a = d.createElement('a');
+                                var ts = new Date().toISOString().slice(0,19).replace(/[.:T]/g,'-');
+                                a.href = url;
+                                a.download = 'VTTFULL_VIEW_' + ts + '.png';
+                                d.body.appendChild(a);
+                                a.click();
+                                setTimeout(function(){ d.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+                            }, 'image/png', 0.95);
+                        })
+                        .catch(function(err){ alert('Error capturando imagen: ' + err); });
+                    });
+                });
+            }
+            bind();
         })();
         </script>
         """,
-        height=100,
-)
+        height=10,
+    )
