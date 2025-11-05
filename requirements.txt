@@ -6,6 +6,8 @@ pandas
 numpy
 py3dbp
 rapidfuzz
+pgeocode
+geopy>=2.4.1
 
 # git add .
 # git commit -m "Describe tus cambios"
@@ -15,3 +17,5 @@ rapidfuzz
 #.venv\Scripts\pip install matplotlib
 
 #(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit
+
+#Set-Location -Path "c:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis"; & ".\.venv\Scripts\python.exe" -m Quotations.generate_quote

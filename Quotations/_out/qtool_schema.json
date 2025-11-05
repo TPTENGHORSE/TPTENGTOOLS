@@ -1,0 +1,306 @@
+{
+  "file": "C:\\Users\\OLMEDOJorge\\OneDrive - Horse\\Exchange VRAC\\02_Engineering Department\\08. New tools & technologies\\QTool\\QUOTATION TOOL DATA.xlsx",
+  "generated_at": "2025-10-22T15:35:51.526734Z",
+  "sheets": [
+    {
+      "name": "MAIN PORTS",
+      "columns": [
+        "Origin Country",
+        "POL",
+        "Destination Country",
+        "POD",
+        "Rate 40ft all-in",
+        "Carrier",
+        "TT",
+        "Type"
+      ],
+      "sample_rows": [
+        {
+          "Origin Country": "Chile",
+          "POL": "CLSAI",
+          "Destination Country": "India",
+          "POD": "INENR",
+          "Rate 40ft all-in": "2953",
+          "Carrier": "CMA-CGM",
+          "TT": "44",
+          "Type": "Direct"
+        },
+        {
+          "Origin Country": "China",
+          "POL": "CNSHA",
+          "Destination Country": "Portugal",
+          "POD": "PTLEI",
+          "Rate 40ft all-in": "2947",
+          "Carrier": "TBD",
+          "TT": "0",
+          "Type": "Direct"
+        },
+        {
+          "Origin Country": "Spain",
+          "POL": "ESVLC",
+          "Destination Country": "Brazil",
+          "POD": "BRPNG",
+          "Rate 40ft all-in": "215",
+          "Carrier": "TBD",
+          "TT": "27",
+          "Type": "Direct"
+        },
+        {
+          "Origin Country": "France",
+          "POL": "FRLEH",
+          "Destination Country": "Argentina",
+          "POD": "ARROS",
+          "Rate 40ft all-in": "728",
+          "Carrier": "Maersk",
+          "TT": "34",
+          "Type": "Direct"
+        },
+        {
+          "Origin Country": "Chile",
+          "POL": "CLSAI",
+          "Destination Country": "India",
+          "POD": "INNSA",
+          "Rate 40ft all-in": "2401",
+          "Carrier": "CMA-CGM",
+          "TT": "39",
+          "Type": "Direct"
+        }
+      ],
+      "row_count_estimate": 64
+    },
+    {
+      "name": "Ports Locations",
+      "columns": [
+        "Country",
+        "POL/POD",
+        "LAT",
+        "LONG"
+      ],
+      "sample_rows": [
+        {
+          "Country": "Argentina",
+          "POL/POD": "ARROS",
+          "LAT": "-32950",
+          "LONG": "-60640"
+        },
+        {
+          "Country": "Argentina",
+          "POL/POD": "ARBUE",
+          "LAT": "-34600",
+          "LONG": "-58370"
+        },
+        {
+          "Country": "Brazil",
+          "POL/POD": "BRPNG",
+          "LAT": "-25520",
+          "LONG": "-48510"
+        },
+        {
+          "Country": "Chile",
+          "POL/POD": "CLSAI",
+          "LAT": "-33590",
+          "LONG": "-71620"
+        },
+        {
+          "Country": "China",
+          "POL/POD": "CNSHA",
+          "LAT": "31400",
+          "LONG": "121800"
+        }
+      ],
+      "row_count_estimate": 27
+    },
+    {
+      "name": "HORSE-PUERTO",
+      "columns": [
+        "Plant",
+        "Plant Lat",
+        "Plant Long",
+        "Plant ZIP Code",
+        "Plant City",
+        "Country Code",
+        "Country",
+        "Port City",
+        "POL/POD",
+        "Port Zip",
+        "Eur/km"
+      ],
+      "sample_rows": [
+        {
+          "Plant": "HORSE TURKEY",
+          "Plant Lat": "40.253926813784",
+          "Plant Long": "28.9527239718937",
+          "Plant ZIP Code": "16120",
+          "Plant City": "Bursa",
+          "Country Code": "TR",
+          "Country": "Turkey",
+          "Port City": "Gemlik",
+          "POL/POD": "TRGEM",
+          "Port Zip": "16600",
+          "Eur/km": "1.57657657657658"
+        },
+        {
+          "Plant": "HORSE TURKEY",
+          "Plant Lat": "40.253926813784",
+          "Plant Long": "28.9527239718937",
+          "Plant ZIP Code": "16120",
+          "Plant City": "Bursa",
+          "Country Code": "TR",
+          "Country": "Turkey",
+          "Port City": "Izmit",
+          "POL/POD": "TRIZT",
+          "Port Zip": "41740",
+          "Eur/km": "1.57657657657658"
+        },
+        {
+          "Plant": " HORSE SEVILLA",
+          "Plant Lat": "37.428184328005",
+          "Plant Long": "-5.98091441838099",
+          "Plant ZIP Code": "41015",
+          "Plant City": "Sevilla",
+          "Country Code": "ES",
+          "Country": "Spain",
+          "Port City": "Valencia",
+          "POL/POD": "ESVLC",
+          "Port Zip": "46024",
+          "Eur/km": "1.7513146841712095"
+        },
+        {
+          "Plant": " HORSE SEVILLA",
+          "Plant Lat": "37.428184328005",
+          "Plant Long": "-5.98091441838099",
+          "Plant ZIP Code": "41015",
+          "Plant City": "Sevilla",
+          "Country Code": "ES",
+          "Country": "Spain",
+          "Port City": "Algeciras",
+          "POL/POD": "ESALG",
+          "Port Zip": "11204",
+          "Eur/km": "1.7513146841712095"
+        },
+        {
+          "Plant": "HORSE MOTORES",
+          "Plant Lat": "41.6017564729645",
+          "Plant Long": "-4.72118460363724",
+          "Plant ZIP Code": "47008",
+          "Plant City": "Valladolid",
+          "Country Code": "ES",
+          "Country": "Spain",
+          "Port City": "Valencia",
+          "POL/POD": "ESVLC",
+          "Port Zip": "46024",
+          "Eur/km": "1.7513146841712095"
+        }
+      ],
+      "row_count_estimate": 11
+    },
+    {
+      "name": "COSTPERKM",
+      "columns": [
+        "Country of origin",
+        "Destination Country",
+        "Codes concatenation",
+        "Eur/km"
+      ],
+      "sample_rows": [
+        {
+          "Country of origin": "TR",
+          "Destination Country": "TR",
+          "Codes concatenation": "TRTR",
+          "Eur/km": "0.969759519"
+        },
+        {
+          "Country of origin": "TR",
+          "Destination Country": "RO",
+          "Codes concatenation": "TRRO",
+          "Eur/km": "2.433391186"
+        },
+        {
+          "Country of origin": "TR",
+          "Destination Country": "ES",
+          "Codes concatenation": "TRES",
+          "Eur/km": "0.99441545"
+        },
+        {
+          "Country of origin": "SK",
+          "Destination Country": "RO",
+          "Codes concatenation": "SKRO",
+          "Eur/km": "1.929411407"
+        },
+        {
+          "Country of origin": "SK",
+          "Destination Country": "ES",
+          "Codes concatenation": "SKES",
+          "Eur/km": "1.286055944"
+        }
+      ],
+      "row_count_estimate": 60
+    },
+    {
+      "name": "PACKAGING",
+      "columns": [
+        "Reference",
+        "Packaging Code",
+        "SNP / Pack (PN / Packaging)",
+        "Part Weight (kg)",
+        "Height (mm)",
+        "Width (mm)",
+        "Lenght (mm)",
+        "Weight EMPTY (kg)"
+      ],
+      "sample_rows": [
+        {
+          "Reference": "100010837R",
+          "Packaging Code": "CFDA--3027",
+          "SNP / Pack (PN / Packaging)": "6",
+          "Part Weight (kg)": "145.393",
+          "Height (mm)": "2280",
+          "Width (mm)": "1470",
+          "Lenght (mm)": "990",
+          "Weight EMPTY (kg)": "2396"
+        },
+        {
+          "Reference": "100013462R",
+          "Packaging Code": "CFDA--3027",
+          "SNP / Pack (PN / Packaging)": "6",
+          "Part Weight (kg)": "145.393",
+          "Height (mm)": "2280",
+          "Width (mm)": "1470",
+          "Lenght (mm)": "990",
+          "Weight EMPTY (kg)": "2396"
+        },
+        {
+          "Reference": "100017905R",
+          "Packaging Code": "CFDA--3027",
+          "SNP / Pack (PN / Packaging)": "6",
+          "Part Weight (kg)": "145.393",
+          "Height (mm)": "2280",
+          "Width (mm)": "1470",
+          "Lenght (mm)": "990",
+          "Weight EMPTY (kg)": "2396"
+        },
+        {
+          "Reference": "100013003R",
+          "Packaging Code": "CFDA--3027",
+          "SNP / Pack (PN / Packaging)": "6",
+          "Part Weight (kg)": "145.393",
+          "Height (mm)": "2280",
+          "Width (mm)": "1470",
+          "Lenght (mm)": "990",
+          "Weight EMPTY (kg)": "2396"
+        },
+        {
+          "Reference": "100011440R",
+          "Packaging Code": "MFM---1377",
+          "SNP / Pack (PN / Packaging)": "6",
+          "Part Weight (kg)": "145.111",
+          "Height (mm)": "545",
+          "Width (mm)": "465",
+          "Lenght (mm)": "215",
+          "Weight EMPTY (kg)": "33"
+        }
+      ],
+      "row_count_estimate": 21840
+    }
+  ]
+}
