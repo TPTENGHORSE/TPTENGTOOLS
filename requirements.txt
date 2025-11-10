@@ -8,6 +8,7 @@ py3dbp
 rapidfuzz
 pgeocode
 geopy>=2.4.1
+kiwisolver 
 
 # git add .
 # git commit -m "Describe tus cambios"

@@ -118,16 +118,26 @@ def main():
     col_left, col_right = st.columns([1.1, 1.3])
 
     with col_left:
-        container_sel = st.selectbox("Select container/truck type", list(DIMENSIONES_INTERNAS.keys()))
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
+        container_sel = st.selectbox("Select Transport Type", list(DIMENSIONES_INTERNAS.keys()))
+        # Primera fila: dimensiones
+        dim_col1, dim_col2, dim_col3 = st.columns(3)
+        with dim_col1:
             box_length = st.number_input("Length (mm)", min_value=1, value=1140)
-        with col2:
+        with dim_col2:
             box_width = st.number_input("Width (mm)", min_value=1, value=900)
-        with col3:
+        with dim_col3:
             box_height = st.number_input("Height (mm)", min_value=1, value=850)
-        with col4:
-            box_weight = st.number_input("Weight PN + UCM (kg)", min_value=0.01, value=150.0, format="%.1f")
+
+        # Segunda fila: pesos y PN/UCM
+        peso_col1, peso_col2, peso_col3 = st.columns(3)
+        with peso_col1:
+            box_weight_pn = st.number_input("Weight PN (kg)", min_value=0.01, value=10.0, format="%.1f")
+        with peso_col2:
+            box_weight_ucm = st.number_input("UCM (kg)", min_value=0.01, value=100.0, format="%.1f")
+        with peso_col3:
+            pn_ucm = st.number_input("PN/UCM", min_value=0.01, value=100.0, format="%.2f")
+        # Nuevo cálculo de peso unitario de la caja
+        box_weight = (box_weight_pn * pn_ucm) + box_weight_ucm
         
         # Calculate maximum possible stackability based on current dimensions
         operative_dim = DIMENSIONES_OPERATIVAS[container_sel]
@@ -177,10 +187,6 @@ def main():
             # Calculate the real maximum stacking possible
             _, _, (nl, nw, nh) = calcula_cajas(operative_dim, box_dim, 9999)
             max_stacking_possible = nh
-            if max_stacking > max_stacking_possible:
-                # Convert to #/1 format for the warning message
-                max_stackability_display = max_stacking_possible - 1
-                st.warning(f"⚠️ The maximum stacking for this configuration is {max_stackability_display}/1. Value adjusted.")
             total_by_volume, rotation, distribution = calcula_cajas(operative_dim, box_dim, min(max_stacking, max_stacking_possible))
             box_volume = (rotation[0] / 1000) * (rotation[1] / 1000) * (rotation[2] / 1000)
             total_usable_volume = box_volume * total_by_volume
@@ -193,13 +199,27 @@ def main():
             realistic_volume = box_volume * realistic_ucm
             realistic_volume_saturation = realistic_volume / total_external_volume * 100
             realistic_weight = box_weight * realistic_ucm
+            # Calcular niveles y última capa para el mensaje usando la distribución real
+            dist_nl, dist_nw, dist_nh = distribution
+            dist_levels = realistic_ucm // (dist_nl * dist_nw) if dist_nl * dist_nw > 0 else 0
+            dist_last_level = realistic_ucm % (dist_nl * dist_nw) if dist_nl * dist_nw > 0 else 0
+            if (dist_levels == 0 and dist_last_level > 0) and max_stacking > 1:
+                st.warning("⚠️ The maximum stacking for this configuration is 0/1. Value adjusted.")
+            elif max_stacking > max_stacking_possible:
+                if max_stacking_possible <= 1:
+                    st.warning("⚠️ The maximum stacking for this configuration is 0/1. Value adjusted.")
+                else:
+                    max_stackability_display = max_stacking_possible - 1
+                    st.warning(f"⚠️ The maximum stacking for this configuration is {max_stackability_display}/1. Value adjusted.")
 
             st.success(f"🔢 Realistic UCM (weight limited): **{realistic_ucm}**")
             st.write(f"Best rotation (LxWxH): **{rotation}**")
             # Calculate the actual distribution used in the drawing
             levels = realistic_ucm // (distribution[0] * distribution[1])
             last_level = realistic_ucm % (distribution[0] * distribution[1])
-            if last_level == 0:
+            if levels == 0 and last_level > 0:
+                used_distribution = f"{last_level} in one level"
+            elif last_level == 0:
                 used_distribution = f"{distribution[0]} x {distribution[1]} x {levels}"
             else:
                 used_distribution = f"{distribution[0]} x {distribution[1]} x {levels} + {last_level} on the last level"
@@ -207,8 +227,13 @@ def main():
             st.write(f"📦 Volume per UCM: **{box_volume:.3f} m³**")
             st.write(f"📏 Total volume (realistic): **{realistic_volume:.2f} m³**")
             st.write(f"🧱 Volume saturation (realistic): **{realistic_volume_saturation:.2f}%**")
-            st.write(f"⚖️ Total weight (realistic): **{realistic_weight:,.2f} kg**")
+            st.write(f"⚖️ Total weight (realistic): **{realistic_weight:,.0f} kg**")
             st.write(f"🏋️ Weight saturation: **{(realistic_weight/max_container_weight)*100:.2f}%**")
+            # Nuevo: Total PN/UT y Densidad
+            total_pn_ut = pn_ucm * realistic_ucm
+            st.write(f"🧮 Total PN/Transport Type: **{total_pn_ut:,.0f}**")
+            densidad = realistic_weight / realistic_volume if realistic_volume > 0 else 0
+            st.write(f"🧪 Densidad: **{densidad:.0f} kg/m³**")
 
     with col_right:
         if 'calculate' in locals() and calculate:
