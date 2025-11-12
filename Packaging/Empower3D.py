@@ -25,7 +25,7 @@ PESOS_MAXIMOS = {
     "Container 20 Ft Std": 25200,
     "Container 40 HC": 24750,
     "Trailer 40m3": 12000,
-    "Mega Trailer 90m3": 32800
+    "Mega Trailer 90m3": 25000
 }
 
 # Solo rotaciones permitidas en eje X e Y (altura fija)
