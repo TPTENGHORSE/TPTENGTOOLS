@@ -257,9 +257,10 @@ for idx, day in enumerate(timeline_days):
         th_style = "padding:0 1px; border:1px solid #eee; min-width:15px; width:18px; height:50px; text-align:center; background:#ffd6d6; font-size:12px; vertical-align:bottom;"
     else:
         th_style = "padding:0 1px; border:1px solid #eee; min-width:20px; width:20px; height:50px; text-align:center; background:#e3eafc; font-size:12px; vertical-align:bottom;"
-    # Wrap the date in a vertical text span
-    vertical_label = day.strftime('%d-%b')
-    table_html += f"<th style='{th_style}'><span class='vtt-vertical-text'>{vertical_label}</span></th>"
+    # Mostrar solo la letra inicial del día en mayúscula
+    vertical_label = day.strftime('%a')[0].upper()  # M, T, W, etc.
+    # Centrar verticalmente la letra inicial
+    table_html += f"<th style='{th_style}'><span class='vtt-vertical-text' style='display:flex;align-items:center;justify-content:center;height:100%;'>{vertical_label}</span></th>"
 table_html += "</tr></thead><tbody>"
 
 # Etiquetas de filas
@@ -278,8 +279,7 @@ time_labels = [
     "12. Customs clearence",
     "13. Transport to plant",
     "14. Rounding",
-    "15. Due Date",
-    "16. Manufacturing"
+    "15. Due Date"
 ]
 
 time_rows = len(time_labels)
