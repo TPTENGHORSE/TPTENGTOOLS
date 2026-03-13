@@ -88,12 +88,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Título principal centrado de la herramienta
-st.markdown(
-    "<h1 style='text-align:center; margin:4px 0 12px 0;'>VTT Tool</h1>",
-    unsafe_allow_html=True,
-)
-
 col_info, col_timeline = st.columns([1, 4], gap="small")
 
 with col_info:
@@ -168,15 +162,10 @@ with col_info:
 
 # KPIs movidos al final
 
-# Valor base para Customer Safety STOCK usado más abajo
-safety_stock_val = None
-if row is not None and 'Safety stock' in df_vtt.columns:
-    safety_stock_val = row['Safety stock']
-
 # --- TIMELINE (Gantt stays here; controls will be rendered below) ---
 st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
 
-# Render the info row (ID, Carrier/FF, Shipper, ILN/Supplier, PLANT) in the wide column
+# Render the info row (ID, Carrier, Shipper, ILN/Supplier, PLANT) in the wide column
 with col_timeline:
     st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
     info_cols = st.columns([1.0, 1.2, 1.2, 1.0, 1.0], gap="medium")
@@ -187,9 +176,9 @@ with col_timeline:
             st.info("No existe la columna ID-Cartography (ID) o no hay coincidencia.")
     with info_cols[1]:
         if row is not None and 'Carrier' in df_vtt.columns:
-            st.markdown(render_box('Carrier/FF', row['Carrier']), unsafe_allow_html=True)
+            st.markdown(render_box('Carrier', row['Carrier']), unsafe_allow_html=True)
         else:
-            st.info("No existe la columna Carrier/FF (Carrier) o no hay coincidencia.")
+            st.info("No existe la columna Carrier o no hay coincidencia.")
     with info_cols[2]:
         if row is not None and len(df_vtt.columns) > 10:
             try:
@@ -277,14 +266,14 @@ table_html += "</tr></thead><tbody>"
 # Etiquetas de filas
 time_labels = [
     "1. Day Customer Order",
-    "2. Day ILN/Supplier Order",
+    "2. Day ILN Order",
     "3. First Receipt Days",
     "4. Pack. prep. & load",
     "5. Transport to POL",
     "6. First Day to POL",
     "7. Cut off",
     "8. ETD",
-    "9. Transit Duration (ETD>ETA)",
+    "9. TT (ETD> ETA)",
     "10. Days flexibility 1",
     "11. Days flexibility 2",
     "12. Customs clearence",
@@ -635,8 +624,7 @@ for i in range(time_rows):
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>🚢</span>"
-                    # Azul más claro para Transit Duration (ETD>ETA)
-                    cell_style += "background-color:#4a90e2;"
+                    cell_style += "background-color:#00008b;"
         elif i == 9:  # 10. Days flexibility 1
             if j == 0:
                 cell_content = time_labels[i]
@@ -1125,199 +1113,76 @@ st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 # --- KPIs al final ---
 st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
 
-"""Cálculo base de KPIs (vista numérica oculta, se usa para Gantt y export)."""
-# Transportation Duration (CLT) toma el valor de '14 Rounding' (Final Day)
-
-# POL>POD (Transit time + Time for security)
-total_tt = None
-if row is not None:
-    t1 = pd.to_numeric(row.get("Transit time", None), errors="coerce") if "Transit time" in df_vtt.columns else None
-    t2 = pd.to_numeric(row.get("Time for security", None), errors="coerce") if "Time for security" in df_vtt.columns else None
-    parts = [v for v in (t1, t2) if v is not None and pd.notna(v)]
-    if parts:
-        total_tt = float(sum(parts))
-
-# POD>DET (Customs clearence final day minus Days flexibility 1)
-pod_det = None
-try:
-    if row is not None:
-        customs_val = None
-        flex1_val = None
-        if '12 Customs Clearance' in df_vtt.columns:
-            customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
-        elif '12 Customs clearence' in df_vtt.columns:
-            customs_val = _coerce_to_int(row.get('12 Customs clearence'))
-        if '10 Days flexibility 1' in df_vtt.columns:
-            flex1_val = _coerce_to_int(row.get('10 Days flexibility 1'))
-        if customs_val and flex1_val:
-            pod_det = customs_val - flex1_val
-except Exception:
-    pod_det = None
-
-# POD>PLANT (Rounding final day minus Customs clearence)
-pod_plant = None
-try:
-    if row is not None:
-        customs_val = None
-        rounding_val = None
-        if '12 Customs Clearance' in df_vtt.columns:
-            customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
-        elif '12 Customs clearence' in df_vtt.columns:
-            customs_val = _coerce_to_int(row.get('12 Customs clearence'))
-        if '14 Rounding' in df_vtt.columns:
-            rounding_val = _coerce_to_int(row.get('14 Rounding'))
-        if rounding_val and customs_val:
-            pod_plant = rounding_val - customs_val
-except Exception:
-    pod_plant = None
-
-# --- KPI Gantt view (duraciones en formato barra de días) ---
-# Guardar HTML del VTT SUMMARY para reutilizarlo en la captura de imagen
-kpi_gantt_html = ""
-try:
-    # Duraciones de KPIs como enteros
-    # CLT usa el valor de Final Day de 14. Rounding
-    kpi_clt = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    kpi_sup_pol = _coerce_to_int(row['Parts Vanning']) if (row is not None and 'Parts Vanning' in df_vtt.columns) else 0
-    # total_tt, pod_det y pod_plant ya se calcularon arriba
-    kpi_pol_pod = _coerce_to_int(total_tt) if ("total_tt" in locals() and total_tt is not None and not pd.isna(total_tt)) else 0
-    kpi_pod_det = _coerce_to_int(pod_det) if ("pod_det" in locals() and pod_det is not None) else 0
-    kpi_pod_plant = _coerce_to_int(pod_plant) if ("pod_plant" in locals() and pod_plant is not None) else 0
-
-    # Calcular inicio real de la etapa 4 (Pack. prep. & load) en la zona de tiempos
-    step4_start_idx = 0
-    try:
-        if row is not None:
-            dias_final_day_4 = int(row['4.3 Packaging préparation & loading']) if '4.3 Packaging préparation & loading' in df_vtt.columns else 0
-            day_plus_val_4 = _coerce_to_int(row['4.2 Packaging préparation & loading']) if '4.2 Packaging préparation & loading' in df_vtt.columns else 0
-            paint_len_4 = day_plus_val_4 if (day_plus_val_4 and day_plus_val_4 > 0) else 1
-            if dias_final_day_4 > 0:
-                step4_start_idx = max(1, dias_final_day_4 - paint_len_4 + 1)
-    except Exception:
-        step4_start_idx = 0
-
-    # CLT debe iniciar desde la primera semana (primer día visible del timeline)
-    # Por eso fijamos su inicio en el día 1 de la escala
-    clt_start_idx = 1
-
-    # Definir inicios para que las barras sigan una secuencia tipo Gantt
-    start_clt = clt_start_idx if kpi_clt > 0 else 0
-    # Supplier>POL debe comenzar donde inicia 4. Pack. prep. & load
-    start_sup = step4_start_idx if (kpi_sup_pol > 0 and step4_start_idx > 0) else 0
-    offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
-    start_pol_pod = offset + 1 if kpi_pol_pod > 0 else 0
-    offset += kpi_pol_pod if kpi_pol_pod > 0 else 0
-    start_pod_det = offset + 1 if kpi_pod_det > 0 else 0
-    offset += kpi_pod_det if kpi_pod_det > 0 else 0
-    start_pod_plant = offset + 1 if kpi_pod_plant > 0 else 0
-
-    kpi_rows = [
-        ("Transportation Duration (CLT)", kpi_clt, start_clt),
-        ("Supplier>POL", kpi_sup_pol, start_sup),
-        ("POL>POD", kpi_pol_pod, start_pol_pod),
-        ("POD>DET", kpi_pod_det, start_pod_det),
-        ("POD>PLANT", kpi_pod_plant, start_pod_plant),
-    ]
-
-    # Escala de días: usar la misma línea de tiempo que la zona superior
-    max_days_kpi = len(timeline_days)
-
-    if max_days_kpi > 0:
-        kpi_gantt_html = "<div style='margin-top:12px;'><div style=\"font-size:18px; font-weight:700; margin-bottom:4px;\">VTT SUMMARY</div>"
-        # Usar mismo tamaño base de fuente que la tabla superior
-        kpi_gantt_html += "<table style='border-collapse:collapse; width:100%; font-size:12px;'>"
-
-        # Cabecero de semanas alineado con la zona de tiempos (cálculo local)
-        kpi_gantt_html += "<thead><tr>"
-        # 4 columnas fijas para alinear con Steps, Day, Day+, Final Day
-        kpi_gantt_html += "<th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th>"
-        current_week = None
-        span_count = 0
-        for idx, d_week in enumerate(timeline_days):
-            w = d_week.isocalendar()[1]
-            if current_week is None:
-                current_week = w
-                span_count = 1
-            elif w == current_week:
-                span_count += 1
-            else:
-                # Copiar estilo de cabecera de semanas de la tabla principal
-                kpi_gantt_html += f"<th colspan='{span_count}' style='padding:0 1px; border:1px solid #eee; min-width:28px; text-align:center; background:#fffbe6; font-size:13.5px; font-weight:bold;'>W{current_week}</th>"
-                current_week = w
-                span_count = 1
-        if current_week is not None and span_count > 0:
-            kpi_gantt_html += f"<th colspan='{span_count}' style='padding:0 1px; border:1px solid #eee; min-width:28px; text-align:center; background:#fffbe6; font-size:13.5px; font-weight:bold;'>W{current_week}</th>"
-        kpi_gantt_html += "</tr>"
-
-        # Fila de días (M,T,W,...) también alineada
-        kpi_gantt_html += "<tr>"
-        # 4 columnas vacías equivalentes a Steps/Day/Day+/Final Day
-        kpi_gantt_html += "<th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th>"
-        for d_day in timeline_days:
-            if d_day.weekday() in (5, 6):
-                th_style = "padding:0 1px; border:1px solid #eee; min-width:15px; width:18px; height:50px; text-align:center; background:#ffd6d6; font-size:12px; vertical-align:bottom;"
-            else:
-                th_style = "padding:0 1px; border:1px solid #eee; min-width:20px; width:20px; height:50px; text-align:center; background:#e3eafc; font-size:12px; vertical-align:bottom;"
-            label_day = d_day.strftime('%a')[0].upper()
-            # Usar la misma etiqueta vertical que la tabla principal
-            kpi_gantt_html += f"<th style='{th_style}'><span class='vtt-vertical-text' style='display:flex;align-items:center;justify-content:center;height:100%;'>{label_day}</span></th>"
-        kpi_gantt_html += "</tr></thead><tbody>"
-
-        for label_txt, val, start_day in kpi_rows:
-            kpi_gantt_html += "<tr>"
-            # Etiqueta KPI (columna Steps)
-            kpi_gantt_html += (
-                "<td style='padding:1px 4px; border:1px solid #eee; text-align:left; font-weight:bold; background:#f5f5f5; min-width:200px; white-space:nowrap; height:15px; line-height:15px; font-size:14px;'>"
-                f"{label_txt}</td>"
-            )
-            # Valor numérico (columna Day)
-            display_val = str(val) if val and val > 0 else "-"
-            kpi_gantt_html += (
-                "<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:50px; height:15px; line-height:15px; font-size:14px;'>"
-                f"{display_val}</td>"
-            )
-            # Columnas vacías para Day+ y Final Day, con anchos equivalentes
-            kpi_gantt_html += "<td style='padding:1px 4px; border:1px solid #eee; min-width:50px; height:15px; line-height:15px;'></td>"
-            kpi_gantt_html += "<td style='padding:1px 4px; border:1px solid #eee; min-width:50px; height:15px; line-height:15px;'></td>"
-
-            # Barras de días (Gantt secuencial) alineadas con timeline_days
-            for idx, _day in enumerate(timeline_days, start=1):
-                if val and val > 0 and start_day:
-                    end_day = start_day + val - 1
-                    is_active = start_day <= idx <= end_day
-                else:
-                    is_active = False
-
-                if is_active:
-                    # Usar azul claro y barco para POL>POD y verde para el resto
-                    bg = "#4a90e2" if label_txt == "POL>POD" else "#90ee90"
-                    content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>🚢</span>" if label_txt == "POL>POD" else ""
-                else:
-                    bg = "#ffffff"
-                    content = ""
-
-                # Altura y ancho similares a las celdas de días de la tabla superior
-                kpi_gantt_html += (
-                    f"<td style='border:1px solid #f0f0f0; width:20px; height:15px; padding:0 1px; background:{bg}; text-align:center; vertical-align:middle;'>{content}</td>"
-                )
-            kpi_gantt_html += "</tr>"
-        kpi_gantt_html += "</tbody></table></div>"
-        st.markdown(kpi_gantt_html, unsafe_allow_html=True)
-except Exception:
-    # Si algo falla, no romper la app; simplemente no mostrar el gantt de KPIs
-    pass
-
-# Mostrar Customer Safety STOCK debajo del Gantt de KPIs
-if safety_stock_val is not None:
-    col_label_cs, col_value_cs = st.columns([1, 3], gap="small")
-    with col_label_cs:
-        st.markdown("<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Customer Safety STOCK</div>", unsafe_allow_html=True)
-    with col_value_cs:
+# Supplier>POL
+col_label, col_value = st.columns([1, 3], gap="small")
+with col_label:
+    st.markdown(
+        "<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Supplier>POL</div>",
+        unsafe_allow_html=True,
+    )
+with col_value:
+    if row is not None and "Parts Vanning" in df_vtt.columns:
         st.markdown(
-            f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{safety_stock_val}</div>",
+            f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{row['Parts Vanning']}</div>",
             unsafe_allow_html=True,
         )
+    else:
+        st.info("No existe la columna Supplier>POL o no hay coincidencia.")
 
+# Transit Time
+col_label_tt, col_value_tt = st.columns([1, 3], gap="small")
+with col_label_tt:
+    st.markdown(
+        "<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Transit Time</div>",
+        unsafe_allow_html=True,
+    )
+with col_value_tt:
+    total_tt = None
+    if row is not None:
+        t1 = pd.to_numeric(row.get("Transit time", None), errors="coerce") if "Transit time" in df_vtt.columns else None
+        t2 = pd.to_numeric(row.get("Time for security", None), errors="coerce") if "Time for security" in df_vtt.columns else None
+        parts = [v for v in (t1, t2) if v is not None and pd.notna(v)]
+        if parts:
+            total_tt = float(sum(parts))
+    if total_tt is not None and pd.notna(total_tt):
+        display_tt = int(total_tt) if abs(total_tt - int(total_tt)) < 1e-9 else round(total_tt, 2)
+        st.markdown(
+            f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{display_tt}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info(
+            "No existe 'Transit time' o 'Time for security' o no hay datos para sumarlos."
+        )
+
+# Customer Leadtime
+col_label2, col_value2 = st.columns([1, 3], gap="small")
+with col_label2:
+    st.markdown(
+        "<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Customer Leadtime</div>",
+        unsafe_allow_html=True,
+    )
+with col_value2:
+    if row is not None and 'Cust. Leadtime' in df_vtt.columns:
+        st.markdown(
+            f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{row['Cust. Leadtime']}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("No existe la columna Cust. Leadtime o no hay coincidencia.")
+
+# Customer Safety STOCK
+col_label3, col_value3 = st.columns([1, 3], gap="small")
+with col_label3:
+    st.markdown("<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Customer Safety STOCK</div>", unsafe_allow_html=True)
+with col_value3:
+    if row is not None and 'Safety stock' in df_vtt.columns:
+        st.markdown(
+            f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{row['Safety stock']}</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("No existe la columna Safety stock o no hay coincidencia.")
 # Controles de Timeline al final (sin mover la tabla de gantt)
 st.subheader("Timeline")
 st.slider(
@@ -1338,8 +1203,8 @@ composite_html += "<div id='timeline_capture' style='position:absolute; left:-10
 composite_html += "<div style='font-size:22px; font-weight:700; margin-bottom:8px;'>VTT View</div>"
 composite_html += f"<div style='margin-bottom:8px;'><b>POL:</b> {capture_pol} &nbsp;&nbsp; <b>POD:</b> {capture_pod} &nbsp;&nbsp; <b>Days to Show:</b> {capture_days}</div>"
 
-# Add ID, Carrier/FF, Shipper, ILN/Supplier, PLANT row (E/D y Commodity irán abajo del timeline)
-_id_val = _carrier_val = _shipper_val = _iln_val = _plant_val = _commodity_val = _ed_val = ""
+# Add ID, Carrier, Shipper, ILN/Supplier, PLANT row (E/D irá abajo del timeline)
+_id_val = _carrier_val = _shipper_val = _iln_val = _plant_val = _ed_val = ""
 if row is not None:
     try:
         _id_val = str(row.get('ID', '')) if 'ID' in df_vtt.columns else ''
@@ -1365,20 +1230,10 @@ if row is not None:
         _plant_val = str(row.get('Name Destin Site', '')) if 'Name Destin Site' in df_vtt.columns else ''
     except Exception:
         _plant_val = ''
-    # Commodity (admite nombre de columna 'Commodity' o 'Comodity')
-    try:
-        if 'Commodity' in df_vtt.columns:
-            _commodity_val = str(row.get('Commodity', ''))
-        elif 'Comodity' in df_vtt.columns:
-            _commodity_val = str(row.get('Comodity', ''))
-        else:
-            _commodity_val = ''
-    except Exception:
-        _commodity_val = ''
 
 composite_html += "<div style='display:grid; grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; gap:6px 12px; align-items:center; margin:6px 0 10px 0;'>"
 composite_html += f"<div style='font-weight:bold;'>ID-Cartography:</div><div>{_id_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>Carrier/FF:</div><div>{_carrier_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>Carrier:</div><div>{_carrier_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>Shipper:</div><div>{_shipper_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>ILN/Supplier:</div><div>{_iln_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>PLANT:</div><div>{_plant_val}</div>"
@@ -1387,7 +1242,7 @@ composite_html += "</div>"
 # Wrap the table to allow full-width capture (no fixed width)
 composite_html += f"<div style='display:inline-block; width:max-content; overflow:visible;'>{table_html}</div>"
 
-# E/D debajo del timeline en el PNG: solo calcular _ed_val, la UI se añade al final
+# E/D debajo del timeline en el PNG
 try:
     if row is not None and 'Expiration Date' in df_vtt.columns:
         _exp_date = row.get('Expiration Date', '')
@@ -1401,34 +1256,38 @@ try:
                     _ed_val = str(_exp_date)
         else:
             _ed_val = ''
+    composite_html += f"<div style='margin:8px 0 4px 0;'>{render_box('E/D', _ed_val)}</div>"
 except Exception:
     pass
-
 composite_html += "<hr style='margin:16px 0;'>"
-
-# Incluir el mismo Gantt de KPIs (VTT SUMMARY) que se ve en la UI (ya incluye su propio título)
-try:
-    if kpi_gantt_html:
-        composite_html += kpi_gantt_html
-except Exception:
-    pass
-
-# Mostrar Customer Safety STOCK debajo del VTT SUMMARY en la captura, igual que en la UI
-if safety_stock_val is not None:
-    composite_html += "<div style='margin-top:12px; display:flex; align-items:center; gap:16px;'>"
-    composite_html += "<div style='font-weight:bold; font-size:25px;'>Customer Safety STOCK</div>"
-    composite_html += (
-        f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{safety_stock_val}</div>"
-    )
-    composite_html += "</div>"
-
-# Añadir E/D y Commodity al final de la captura, igual que en la UI
-if _ed_val or _commodity_val:
-    if _ed_val:
-        composite_html += f"<div style='margin:8px 0 4px 0;'>{render_box('E/D', _ed_val)}</div>"
-    if _commodity_val:
-        composite_html += f"<div style='margin:0 0 8px 0;'>{render_box('Commodity', _commodity_val)}</div>"
-
+composite_html += "<div style='font-size:18px; font-weight:700; margin-bottom:8px;'>KPIs</div>"
+composite_html += "<div style='display:grid; grid-template-columns: 220px 1fr; row-gap:6px; column-gap:12px;'>"
+composite_html += "<div style='font-weight:bold;'>Supplier>POL</div>"
+if row is not None and "Parts Vanning" in df_vtt.columns:
+    composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Parts Vanning']}</div>"
+else:
+    composite_html += "<div>-</div>"
+composite_html += "<div style='font-weight:bold;'>Transit Time</div>"
+_tt_display = None
+if row is not None:
+    _t1 = pd.to_numeric(row.get('Transit time', None), errors='coerce') if 'Transit time' in df_vtt.columns else None
+    _t2 = pd.to_numeric(row.get('Time for security', None), errors='coerce') if 'Time for security' in df_vtt.columns else None
+    _parts = [v for v in (_t1, _t2) if v is not None and pd.notna(v)]
+    if _parts:
+        _sum = float(sum(_parts))
+        _tt_display = int(_sum) if abs(_sum - int(_sum)) < 1e-9 else round(_sum, 2)
+composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{_tt_display if _tt_display is not None else '-'}</div>"
+composite_html += "<div style='font-weight:bold;'>Customer Leadtime</div>"
+if row is not None and 'Cust. Leadtime' in df_vtt.columns:
+    composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Cust. Leadtime']}</div>"
+else:
+    composite_html += "<div>-</div>"
+composite_html += "<div style='font-weight:bold;'>Customer Safety STOCK</div>"
+if row is not None and 'Safety stock' in df_vtt.columns:
+    composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Safety stock']}</div>"
+else:
+    composite_html += "<div>-</div>"
+composite_html += "</div>"  # end grid
 composite_html += "</div>"  # end capture root
 st.markdown(composite_html, unsafe_allow_html=True)
 
@@ -1618,8 +1477,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     weekendfill = _hex_to_fill('#ffd6d6')
     weekdayfill = _hex_to_fill('#e3eafc')
     paintfill = _hex_to_fill('#90ee90')
-    # Azul más claro para Transit Duration (ETD>ETA) en Excel para que coincida con la vista HTML
-    darkbluefill = _hex_to_fill('#4a90e2')
+    darkbluefill = _hex_to_fill('#00008b')
     border = Border(left=Side(style='thin', color='DDDDDD'), right=Side(style='thin', color='DDDDDD'), top=Side(style='thin', color='DDDDDD'), bottom=Side(style='thin', color='DDDDDD'))
 
     r = 1
@@ -1629,22 +1487,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     # Info row if available
     if row is not None:
         info_pairs = []
-        # Detectar columna de Commodity/Comodity si existe
-        commodity_col = None
-        if 'Commodity' in df_vtt.columns:
-            commodity_col = 'Commodity'
-        elif 'Comodity' in df_vtt.columns:
-            commodity_col = 'Comodity'
-
-        for label, colname in [
-            ('ID-Cartography','ID'),
-            ('Carrier/FF','Carrier'),
-            ('Shipper', df_vtt.columns[10] if len(df_vtt.columns) > 10 else None),
-            ('ILN/Supplier', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None),
-            ('PLANT','Name Destin Site'),
-            ('Commodity', commodity_col),
-            ('E/D','Expiration Date')
-        ]:
+        for label, colname in [('ID-Cartography','ID'), ('Carrier','Carrier'), ('Shipper', df_vtt.columns[10] if len(df_vtt.columns) > 10 else None), ('ILN/Supplier', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None), ('PLANT','Name Destin Site'), ('E/D','Expiration Date')]:
             val = row.get(colname, '') if (colname and colname in df_vtt.columns) else ''
             info_pairs.append((label, val))
         c = 1
@@ -1743,120 +1586,28 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     for k in range(start_col, start_col + len(timeline_days)):
         ws.column_dimensions[get_column_letter(k)].width = 4
 
-    # VTT SUMMARY block under the table (mirror of UI summary with mini-Gantt)
+    # KPIs block under the table
     rr = r + len(time_labels) + 2
-    ws.cell(row=rr, column=1, value='VTT SUMMARY').font = Font(bold=True, size=14)
+    ws.cell(row=rr, column=1, value='Supplier>POL').font = bold
+    if row is not None and 'Parts Vanning' in df_vtt.columns:
+        ws.cell(row=rr, column=2, value=str(row['Parts Vanning']))
     rr += 1
-
-    # Calcular duraciones de KPIs como en la UI
-    # CLT usa el valor de Final Day de 14. Rounding
-    kpi_clt = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    kpi_sup_pol = _coerce_to_int(row['Parts Vanning']) if (row is not None and 'Parts Vanning' in df_vtt.columns) else 0
-
-    total_tt_val = None
+    ws.cell(row=rr, column=1, value='Transit Time').font = bold
+    # recompute total_tt similar to UI
+    total_tt = None
     if row is not None:
         t1 = pd.to_numeric(row.get('Transit time', None), errors='coerce') if 'Transit time' in df_vtt.columns else None
         t2 = pd.to_numeric(row.get('Time for security', None), errors='coerce') if 'Time for security' in df_vtt.columns else None
         parts = [v for v in (t1, t2) if v is not None and pd.notna(v)]
         if parts:
-            total_tt_val = float(sum(parts))
-    kpi_pol_pod = _coerce_to_int(total_tt_val) if (total_tt_val is not None and not pd.isna(total_tt_val)) else 0
-
-    pod_det_val = None
-    try:
-        if row is not None:
-            customs_val = None
-            flex1_val = None
-            if '12 Customs Clearance' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
-            elif '12 Customs clearence' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs clearence'))
-            if '10 Days flexibility 1' in df_vtt.columns:
-                flex1_val = _coerce_to_int(row.get('10 Days flexibility 1'))
-            if customs_val and flex1_val:
-                pod_det_val = customs_val - flex1_val
-    except Exception:
-        pod_det_val = None
-    kpi_pod_det = _coerce_to_int(pod_det_val) if pod_det_val is not None else 0
-
-    pod_plant_val = None
-    try:
-        if row is not None:
-            customs_val = None
-            rounding_val = None
-            if '12 Customs Clearance' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
-            elif '12 Customs clearence' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs clearence'))
-            if '14 Rounding' in df_vtt.columns:
-                rounding_val = _coerce_to_int(row.get('14 Rounding'))
-            if rounding_val and customs_val:
-                pod_plant_val = rounding_val - customs_val
-    except Exception:
-        pod_plant_val = None
-    kpi_pod_plant = _coerce_to_int(pod_plant_val) if pod_plant_val is not None else 0
-
-    # Calcular inicio real de la etapa 4 (Pack. prep. & load) para alinear Supplier>POL
-    step4_start_idx = 0
-    try:
-        if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns:
-            dias_final_day_4 = int(row['4.3 Packaging préparation & loading'])
-            day_plus_val_4 = _coerce_to_int(row['4.2 Packaging préparation & loading']) if '4.2 Packaging préparation & loading' in df_vtt.columns else 0
-            paint_len_4 = day_plus_val_4 if (day_plus_val_4 and day_plus_val_4 > 0) else 1
-            if dias_final_day_4 > 0:
-                step4_start_idx = max(1, dias_final_day_4 - paint_len_4 + 1)
-    except Exception:
-        step4_start_idx = 0
-
-    # CLT debe iniciar desde la primera semana (primer día visible del timeline)
-    # Por eso fijamos su inicio en el día 1 de la escala
-    clt_start_idx = 1
-
-    # Definir inicios secuenciales como en el Gantt de la UI
-    start_clt = clt_start_idx if kpi_clt > 0 else 0
-    start_sup = step4_start_idx if (kpi_sup_pol > 0 and step4_start_idx > 0) else 0
-    offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
-    start_pol_pod = offset + 1 if kpi_pol_pod > 0 else 0
-    offset += kpi_pol_pod if kpi_pol_pod > 0 else 0
-    start_pod_det = offset + 1 if kpi_pod_det > 0 else 0
-    offset += kpi_pod_det if kpi_pod_det > 0 else 0
-    start_pod_plant = offset + 1 if kpi_pod_plant > 0 else 0
-
-    kpi_rows = [
-        ("Transportation Duration (CLT)", kpi_clt, start_clt),
-        ("Supplier>POL", kpi_sup_pol, start_sup),
-        ("POL>POD", kpi_pol_pod, start_pol_pod),
-        ("POD>DET", kpi_pod_det, start_pod_det),
-        ("POD>PLANT", kpi_pod_plant, start_pod_plant),
-    ]
-
-    for label_txt, val, start_day in kpi_rows:
-        ws.cell(row=rr, column=1, value=label_txt).font = bold
-        ws.cell(row=rr, column=1).border = border
-        ws.cell(row=rr, column=1).alignment = Alignment(horizontal='left')
-
-        display_val = str(val) if val and val > 0 else "-"
-        ws.cell(row=rr, column=2, value=display_val).border = border
-        ws.cell(row=rr, column=2).alignment = Alignment(horizontal='center')
-
-        # Columnas vacías para Day+ y Final Day (solo para mantener estructura)
-        for ci in (3, 4):
-            ws.cell(row=rr, column=ci, value="").border = border
-
-        # Pintar mini-Gantt en las columnas de días usando mismo eje temporal
-        for idx, d in enumerate(timeline_days, start=0):
-            ci = start_col + idx
-            cell = ws.cell(row=rr, column=ci, value="")
-            cell.border = border
-            if val and val > 0 and start_day:
-                end_day = start_day + val - 1
-                day_index = idx + 1
-                if start_day <= day_index <= end_day:
-                    # Azul claro para POL>POD, verde para el resto
-                    cell.fill = darkbluefill if label_txt == "POL>POD" else paintfill
-        rr += 1
-
-    # Customer Safety STOCK debajo del resumen
+            total_tt = float(sum(parts))
+    if total_tt is not None and pd.notna(total_tt):
+        ws.cell(row=rr, column=2, value=int(total_tt) if abs(total_tt - int(total_tt)) < 1e-9 else round(total_tt,2))
+    rr += 1
+    ws.cell(row=rr, column=1, value='Customer Leadtime').font = bold
+    if row is not None and 'Cust. Leadtime' in df_vtt.columns:
+        ws.cell(row=rr, column=2, value=str(row['Cust. Leadtime']))
+    rr += 1
     ws.cell(row=rr, column=1, value='Customer Safety STOCK').font = bold
     if row is not None and 'Safety stock' in df_vtt.columns:
         ws.cell(row=rr, column=2, value=str(row['Safety stock']))
@@ -1869,20 +1620,8 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
 
 
-# --- Mostrar Commodity y E/D debajo del timeline y antes del botón Generate files ---
+# --- Mostrar E/D debajo del timeline y antes del botón Generate files ---
 st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
-try:
-    _commodity_display = ""
-    if row is not None:
-        if 'Commodity' in df_vtt.columns:
-            _commodity_display = str(row.get('Commodity', ''))
-        elif 'Comodity' in df_vtt.columns:
-            _commodity_display = str(row.get('Comodity', ''))
-    if _commodity_display:
-        st.markdown(render_box('Commodity', _commodity_display), unsafe_allow_html=True)
-except Exception:
-    pass
-
 try:
     _ed_display = ""
     if row is not None and 'Expiration Date' in df_vtt.columns:
