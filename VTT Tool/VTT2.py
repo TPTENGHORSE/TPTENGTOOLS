@@ -700,7 +700,8 @@ for i in range(time_rows):
                             base = row['9 ETD>ETA']
                         bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
                         if pd.isna(bnum):
-                            m = re.findall(r"[-+]?\d*\.?\d+", str(base)) if base is not None else []
+                            # FIX: regex string was split across lines, causing unterminated string literal error
+                            m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
                             bnum = float(m[0]) if m else float('nan')
                         plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
                         if not pd.isna(bnum):
@@ -1126,7 +1127,7 @@ st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
 
 """Cálculo base de KPIs (vista numérica oculta, se usa para Gantt y export)."""
-# Transportation Duration (CLT) toma el valor de '14 Rounding' (Final Day)
+# Customer Leadtime (CLT) toma el valor de '14 Rounding' (Final Day)
 
 # POL>POD (Transit time + Time for security)
 total_tt = None
@@ -1172,13 +1173,81 @@ except Exception:
     pod_plant = None
 
 # --- KPI Gantt view (duraciones en formato barra de días) ---
+def _final_day_for_step(i, row, df_vtt):
+    try:
+        if i == 0:
+            return int(row['1 Day Customer Order']) if row is not None and '1 Day Customer Order' in df_vtt.columns else 0
+        if i == 1:
+            return int(row['2 Day ILN Order']) if row is not None and '2 Day ILN Order' in df_vtt.columns else 0
+        if i == 2:
+            return int(row['3.2 First Receipt Days']) if row is not None and '3.2 First Receipt Days' in df_vtt.columns else 0
+        if i == 3:
+            return int(row['4.3 Packaging préparation & loading']) if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns else 0
+        if i == 4:
+            return int(row['5.3 Transport ILN to POL']) if row is not None and '5.3 Transport ILN to POL' in df_vtt.columns else 0
+        if i == 5:
+            return int(row['6 First Day to POL']) if row is not None and '6 First Day to POL' in df_vtt.columns else 0
+        if i == 6:
+            return int(row['7 Cutt off']) if row is not None and '7 Cutt off' in df_vtt.columns else 0
+        if i == 7:
+            return int(row['8 ETD']) if row is not None and '8 ETD' in df_vtt.columns else 0
+        if i == 8:
+            if row is not None and '9 ETD> ETA' in df_vtt.columns:
+                return int(row['9 ETD> ETA'])
+            if row is not None and '9 ETD>ETA' in df_vtt.columns:
+                return int(row['9 ETD>ETA'])
+            return 0
+        if i == 9:
+            if row is not None and '10 Days flexibility 1' in df_vtt.columns and pd.notna(row['10 Days flexibility 1']):
+                return int(row['10 Days flexibility 1'])
+            base = None
+            if row is not None and '9 ETD> ETA' in df_vtt.columns:
+                base = row['9 ETD> ETA']
+            elif row is not None and '9 ETD>ETA' in df_vtt.columns:
+                base = row['9 ETD>ETA']
+            bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
+            if pd.isna(bnum):
+                m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
+                bnum = float(m[0]) if m else float('nan')
+            plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
+            return int(float(bnum)) + 1 + int(plus) if not pd.isna(bnum) else 0
+        if i == 10:
+            return int(row['11 Days flexibility 2']) if row is not None and '11 Days flexibility 2' in df_vtt.columns else 0
+        if i == 11:
+            if row is not None and '12 Customs Clearance' in df_vtt.columns:
+                return int(row['12 Customs Clearance'])
+            if row is not None and '12 Customs clearence' in df_vtt.columns:
+                return int(row['12 Customs clearence'])
+            return 0
+        if i == 12:
+            return int(row['13 Transport to Plant']) if row is not None and '13 Transport to Plant' in df_vtt.columns else 0
+        if i == 13:
+            return int(row['14 Rounding']) if row is not None and '14 Rounding' in df_vtt.columns else 0
+        if i == 14:
+            return int(row['15 Due Date']) if row is not None and '15 Due Date' in df_vtt.columns else 0
+        if i == 15:
+            return int(row['16 Manufacturing']) if row is not None and '16 Manufacturing' in df_vtt.columns else 0
+        return 0
+    except Exception:
+        return 0
+
 # Guardar HTML del VTT SUMMARY para reutilizarlo en la captura de imagen
 kpi_gantt_html = ""
 try:
     # Duraciones de KPIs como enteros
     # CLT usa el valor de Final Day de 14. Rounding
     kpi_clt = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    kpi_sup_pol = _coerce_to_int(row['Parts Vanning']) if (row is not None and 'Parts Vanning' in df_vtt.columns) else 0
+    # Supplier>POL = Final Day de 8. ETD - Day de 3. First Receipt Days + 1
+    try:
+        # Final Day de 8. ETD
+        final_day_8 = _final_day_for_step(7, row, df_vtt)
+        # Day de 3. First Receipt Days (no usar 3.2, solo 3 First Receipt Days)
+        day_3 = _coerce_to_int(row['3 First Receipt Days']) if (row is not None and '3 First Receipt Days' in df_vtt.columns) else 0
+        kpi_sup_pol = final_day_8 - day_3 + 1
+        # st.write debug eliminado
+    except Exception as e:
+        st.write(f"[DEBUG] Error calculando Supplier>POL: {e}")
+        kpi_sup_pol = 0
     # total_tt, pod_det y pod_plant ya se calcularon arriba
     kpi_pol_pod = _coerce_to_int(total_tt) if ("total_tt" in locals() and total_tt is not None and not pd.isna(total_tt)) else 0
     kpi_pod_det = _coerce_to_int(pod_det) if ("pod_det" in locals() and pod_det is not None) else 0
@@ -1187,8 +1256,8 @@ try:
     # Calcular inicio real de la etapa 4 (Pack. prep. & load) en la zona de tiempos
     step4_start_idx = 0
     try:
-        if row is not None:
-            dias_final_day_4 = int(row['4.3 Packaging préparation & loading']) if '4.3 Packaging préparation & loading' in df_vtt.columns else 0
+        if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns:
+            dias_final_day_4 = int(row['4.3 Packaging préparation & loading'])
             day_plus_val_4 = _coerce_to_int(row['4.2 Packaging préparation & loading']) if '4.2 Packaging préparation & loading' in df_vtt.columns else 0
             paint_len_4 = day_plus_val_4 if (day_plus_val_4 and day_plus_val_4 > 0) else 1
             if dias_final_day_4 > 0:
@@ -1197,23 +1266,139 @@ try:
         step4_start_idx = 0
 
     # CLT debe iniciar desde la primera semana (primer día visible del timeline)
-    # Por eso fijamos su inicio en el día 1 de la escala
     clt_start_idx = 1
 
-    # Definir inicios para que las barras sigan una secuencia tipo Gantt
+    # El inicio de Supplier>POL debe ser igual al día de 3. First Receipt Days (columna Day)
+    start_sup = day_3 if (day_3 and day_3 > 0) else 0
+
+    # Definir función antes de su uso (mover aquí para evitar error de función no definida)
+    def _final_day_for_step(i, row, df_vtt):
+        try:
+            if i == 0:
+                return int(row['1 Day Customer Order']) if row is not None and '1 Day Customer Order' in df_vtt.columns else 0
+            if i == 1:
+                return int(row['2 Day ILN Order']) if row is not None and '2 Day ILN Order' in df_vtt.columns else 0
+            if i == 2:
+                return int(row['3.2 First Receipt Days']) if row is not None and '3.2 First Receipt Days' in df_vtt.columns else 0
+            if i == 3:
+                return int(row['4.3 Packaging préparation & loading']) if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns else 0
+            if i == 4:
+                return int(row['5.3 Transport ILN to POL']) if row is not None and '5.3 Transport ILN to POL' in df_vtt.columns else 0
+            if i == 5:
+                return int(row['6 First Day to POL']) if row is not None and '6 First Day to POL' in df_vtt.columns else 0
+            if i == 6:
+                return int(row['7 Cutt off']) if row is not None and '7 Cutt off' in df_vtt.columns else 0
+            if i == 7:
+                return int(row['8 ETD']) if row is not None and '8 ETD' in df_vtt.columns else 0
+            if i == 8:
+                if row is not None and '9 ETD> ETA' in df_vtt.columns:
+                    return int(row['9 ETD> ETA'])
+                if row is not None and '9 ETD>ETA' in df_vtt.columns:
+                    return int(row['9 ETD>ETA'])
+                return 0
+            if i == 9:
+                if row is not None and '10 Days flexibility 1' in df_vtt.columns and pd.notna(row['10 Days flexibility 1']):
+                    return int(row['10 Days flexibility 1'])
+                base = None
+                if row is not None and '9 ETD> ETA' in df_vtt.columns:
+                    base = row['9 ETD> ETA']
+                elif row is not None and '9 ETD>ETA' in df_vtt.columns:
+                    base = row['9 ETD>ETA']
+                bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
+                if pd.isna(bnum):
+                    # FIX: regex string was split across lines, causing unterminated string literal error
+                    m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
+                    bnum = float(m[0]) if m else float('nan')
+                plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
+                return int(float(bnum)) + 1 + int(plus) if not pd.isna(bnum) else 0
+            if i == 10:
+                return int(row['11 Days flexibility 2']) if row is not None and '11 Days flexibility 2' in df_vtt.columns else 0
+            if i == 11:
+                if row is not None and '12 Customs Clearance' in df_vtt.columns:
+                    return int(row['12 Customs Clearance'])
+                if row is not None and '12 Customs clearence' in df_vtt.columns:
+                    return int(row['12 Customs clearence'])
+                return 0
+            if i == 12:
+                return int(row['13 Transport to Plant']) if row is not None and '13 Transport to Plant' in df_vtt.columns else 0
+            if i == 13:
+                return int(row['14 Rounding']) if row is not None and '14 Rounding' in df_vtt.columns else 0
+            if i == 14:
+                return int(row['15 Due Date']) if row is not None and '15 Due Date' in df_vtt.columns else 0
+            if i == 15:
+                return int(row['16 Manufacturing']) if row is not None and '16 Manufacturing' in df_vtt.columns else 0
+            return 0
+        except Exception:
+            return 0
+
+    # Definir inicios secuenciales como en el Gantt de la UI
     start_clt = clt_start_idx if kpi_clt > 0 else 0
-    # Supplier>POL debe comenzar donde inicia 4. Pack. prep. & load
-    start_sup = step4_start_idx if (kpi_sup_pol > 0 and step4_start_idx > 0) else 0
+    # start_sup ya fue definido arriba como el día de 3. First Receipt Days
     offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
-    start_pol_pod = offset + 1 if kpi_pol_pod > 0 else 0
-    offset += kpi_pol_pod if kpi_pol_pod > 0 else 0
-    start_pod_det = offset + 1 if kpi_pod_det > 0 else 0
-    offset += kpi_pod_det if kpi_pod_det > 0 else 0
-    start_pod_plant = offset + 1 if kpi_pod_plant > 0 else 0
+    # El inicio de POL>POD debe ser igual al día de 9. Transit Duration (ETD>ETA) en Day
+    # El inicio de POL>POD debe ser un día antes de que termine Supplier>POL
+    if start_sup and kpi_sup_pol:
+        start_pol_pod = start_sup + kpi_sup_pol - 1
+    else:
+        start_pol_pod = 0
+
+    # Forzar que el inicio nunca sea menor que 1
+    start_pol_pod = max(1, start_pol_pod)
+    # El inicio de POD>DET debe ser justo cuando termina POL>POD
+    start_pod_det = start_pol_pod + kpi_pol_pod if (start_pol_pod and kpi_pol_pod > 0) else 0
+    # El inicio de POD>PLANT debe ser justo cuando termina POD>DET
+    start_pod_plant = start_pod_det + kpi_pod_det if (start_pod_det and kpi_pod_det > 0) else 0
+
+    # Línea nueva: customer leadtime
+    # Customer Leadtime (CLT) = Final Day de 14. Rounding - Final Day de 1. Day Customer Order + 1
+    try:
+        final_day_14 = _final_day_for_step(13, row, df_vtt)
+        final_day_1 = _final_day_for_step(0, row, df_vtt)
+        customer_leadtime = final_day_14 - final_day_1 + 1
+        # st.write debug eliminado
+    except Exception as e:
+        st.write(f"[DEBUG] Error calculando Customer Leadtime: {e}")
+        customer_leadtime = 0
+    # Transportation Duration = Final Day de 14. Rounding - Day de 5. Transport to POL + 1
+    try:
+        final_day_14 = _final_day_for_step(13, row, df_vtt)
+        # Obtener Day de 5. Transport to POL (columna '5.1 Transport ILN to POL')
+        day_5 = _coerce_to_int(row['5.1 Transport ILN to POL']) if (row is not None and '5.1 Transport ILN to POL' in df_vtt.columns) else 0
+        transportation_duration = final_day_14 - day_5 + 1
+        # st.write debug eliminado
+    except Exception as e:
+        st.write(f"[DEBUG] Error calculando Transportation Duration: {e}")
+        transportation_duration = 0
+    # El inicio de 5. Transport to POL es igual a la fila 5 en la tabla de tiempo (índice 4)
+    # Usar el mismo start que esa fila para Transportation Duration
+    start_transport_to_pol = 0
+    try:
+        if row is not None:
+            dias_final_day_5 = int(row['5.3 Transport ILN to POL']) if '5.3 Transport ILN to POL' in df_vtt.columns else 0
+            day_plus_val_5 = _coerce_to_int(row['5.2 Transport ILN to POL']) if '5.2 Transport ILN to POL' in df_vtt.columns else 0
+            paint_len_5 = day_plus_val_5 if (day_plus_val_5 and day_plus_val_5 > 0) else 1
+            if dias_final_day_5 > 0:
+                start_transport_to_pol = max(1, dias_final_day_5 - paint_len_5 + 1)
+    except Exception:
+        start_transport_to_pol = 0
+
+    # El inicio de 1. Day Customer Order es igual a la fila 1 en la tabla de tiempo (índice 0)
+    start_day_customer_order = 0
+    try:
+        if row is not None:
+            dias_final_day_1 = int(row['1 Day Customer Order']) if '1 Day Customer Order' in df_vtt.columns else 0
+            day_plus_val_1 = 1  # No hay Day+ para el primer paso, se asume 1
+            paint_len_1 = day_plus_val_1
+            if dias_final_day_1 > 0:
+                start_day_customer_order = max(1, dias_final_day_1 - paint_len_1 + 1)
+    except Exception:
+        start_day_customer_order = 0
 
     kpi_rows = [
-        ("Transportation Duration (CLT)", kpi_clt, start_clt),
+        ("Customer Leadtime (CLT)", customer_leadtime, start_day_customer_order),
+        ("Transportation Duration", transportation_duration, start_transport_to_pol),
         ("Supplier>POL", kpi_sup_pol, start_sup),
+        # Para POL>POD, la duración es kpi_pol_pod (Transit time + Time for security)
         ("POL>POD", kpi_pol_pod, start_pol_pod),
         ("POD>DET", kpi_pod_det, start_pod_det),
         ("POD>PLANT", kpi_pod_plant, start_pod_plant),
@@ -1271,7 +1456,7 @@ try:
                 f"{label_txt}</td>"
             )
             # Valor numérico (columna Day)
-            display_val = str(val) if val and val > 0 else "-"
+            display_val = str(val)  # Mostrar siempre el valor, incluso si es 0 o negativo, para depuración
             kpi_gantt_html += (
                 "<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:50px; height:15px; line-height:15px; font-size:14px;'>"
                 f"{display_val}</td>"
@@ -1503,7 +1688,8 @@ def _final_day_for_step(i, row, df_vtt):
                 base = row['9 ETD>ETA']
             bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
             if pd.isna(bnum):
-                m = re.findall(r"[-+]?\d*\.?\d+", str(base)) if base is not None else []
+                # FIX: regex string was split across lines, causing unterminated string literal error
+                m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
                 bnum = float(m[0]) if m else float('nan')
             plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
             return int(float(bnum)) + 1 + int(plus) if not pd.isna(bnum) else 0
@@ -1816,14 +2002,30 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     start_clt = clt_start_idx if kpi_clt > 0 else 0
     start_sup = step4_start_idx if (kpi_sup_pol > 0 and step4_start_idx > 0) else 0
     offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
-    start_pol_pod = offset + 1 if kpi_pol_pod > 0 else 0
+    if row is not None and '9 ETD> ETA' in df_vtt.columns:
+        start_pol_pod = _coerce_to_int(row['9 ETD> ETA'])
+    elif row is not None and '9 ETD>ETA' in df_vtt.columns:
+        start_pol_pod = _coerce_to_int(row['9 ETD>ETA'])
+    else:
+        start_pol_pod = 0
     offset += kpi_pol_pod if kpi_pol_pod > 0 else 0
     start_pod_det = offset + 1 if kpi_pod_det > 0 else 0
     offset += kpi_pod_det if kpi_pod_det > 0 else 0
     start_pod_plant = offset + 1 if kpi_pod_plant > 0 else 0
 
+    # Línea nueva: customer leadtime
+    # Customer Leadtime (CLT) = 14. Rounding
+    customer_leadtime = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
+    # Transportation Duration = Final Day de 14. Rounding - Final Day de 5. Transport to POL + 1
+    try:
+        final_day_14 = _final_day_for_step(13, row, df_vtt)
+        final_day_5 = _final_day_for_step(4, row, df_vtt)
+        transportation_duration = final_day_14 - final_day_5 + 1
+    except Exception:
+        transportation_duration = 0
     kpi_rows = [
-        ("Transportation Duration (CLT)", kpi_clt, start_clt),
+        ("Customer Leadtime (CLT)", customer_leadtime, start_clt),
+        ("Transportation Duration", transportation_duration, start_clt),
         ("Supplier>POL", kpi_sup_pol, start_sup),
         ("POL>POD", kpi_pol_pod, start_pol_pod),
         ("POD>DET", kpi_pod_det, start_pod_det),
