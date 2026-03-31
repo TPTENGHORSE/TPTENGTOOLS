@@ -36,29 +36,71 @@ def rotaciones_caja(l, w, h):
     ]
 
 # Cálculo de cajas con límite de apilamiento (stockage)
+
+# Cálculo mixto de cajas: llena con orientación principal y usa el espacio sobrante para rotar cajas en planta
 def calcula_cajas(contenedor, caja, stacking):
     Lc, Wc, Hc = contenedor
-    mejor_cantidad = 0
-    mejor_rotacion = None
-    mejor_distribucion = (0, 0, 0)
+    l1, w1, h = caja
+    l2, w2 = w1, l1  # Rotación en planta
+    nh = min(Hc // h, stacking)
 
-    for (l, w, h) in rotaciones_caja(*caja):
-        nl = Lc // l
-        nw = Wc // w
-        nh = min(Hc // h, stacking)
-        total = nl * nw * nh
-        if total > mejor_cantidad:
-            mejor_cantidad = total
-            mejor_rotacion = (l, w, h)
-            mejor_distribucion = (nl, nw, nh)
+    # Opción 1: principal (l1, w1)
+    nl1 = Lc // l1
+    nw1 = Wc // w1
+    sobrante_w = Wc - (nw1 * w1)
+    sobrante_l = Lc - (nl1 * l1)
+
+    # 1. Cajas rotadas en el espacio sobrante del ancho (a lo largo de todo el largo principal)
+    nl2 = nl1
+    nw2 = sobrante_w // w2 if sobrante_w >= w2 else 0
+
+    # 2. Cajas rotadas en el espacio sobrante del largo (a lo ancho de todo el ancho principal)
+    nl3 = sobrante_l // l2 if sobrante_l >= l2 else 0
+    nw3 = nw1
+
+    # 3. Cajas rotadas en la esquina sobrante (si cabe)
+    nl4 = sobrante_l // l2 if sobrante_l >= l2 else 0
+    nw4 = sobrante_w // w2 if sobrante_w >= w2 else 0
+
+    total1 = (nl1 * nw1 + nl2 * nw2 + nl3 * nw3 + nl4 * nw4) * nh
+    distribucion1 = ((nl1, nw1, nh), (nl2, nw2, nh), (nl3, nw3, nh), (nl4, nw4, nh))
+
+    # Opción 2: principal (w1, l1)
+    nl1b = Lc // w1
+    nw1b = Wc // l1
+    sobrante_wb = Wc - (nw1b * l1)
+    sobrante_lb = Lc - (nl1b * w1)
+
+    nl2b = nl1b
+    nw2b = sobrante_wb // w2 if sobrante_wb >= w2 else 0
+    nl3b = sobrante_lb // l2 if sobrante_lb >= l2 else 0
+    nw3b = nw1b
+    nl4b = sobrante_lb // l2 if sobrante_lb >= l2 else 0
+    nw4b = sobrante_wb // w2 if sobrante_wb >= w2 else 0
+
+    total2 = (nl1b * nw1b + nl2b * nw2b + nl3b * nw3b + nl4b * nw4b) * nh
+    distribucion2 = ((nl1b, nw1b, nh), (nl2b, nw2b, nh), (nl3b, nw3b, nh), (nl4b, nw4b, nh))
+
+    if total1 >= total2:
+        mejor_cantidad = total1
+        mejor_rotacion = (l1, w1, h)
+        mejor_distribucion = distribucion1
+    else:
+        mejor_cantidad = total2
+        mejor_rotacion = (w1, l1, h)
+        mejor_distribucion = distribucion2
 
     return mejor_cantidad, mejor_rotacion, mejor_distribucion
 
 # Dibujo de contenedor con cajas
-def dibuja_cajas_3d(contenedor, caja_dim, distribucion, max_cajas=None, titulo="3D Distribution"):
+
+# Dibuja ambas orientaciones de cajas (principal y rotada) con diferentes colores
+def dibuja_cajas_3d(contenedor, caja_dim, distribuciones, max_cajas=None, titulo="3D Distribution"):
+    # Extraer la distribución principal para usar nl1 y nw1 en los offsets
+    (nl1, nw1, nh1) = distribuciones[0]
     Lc, Wc, Hc = contenedor
-    nl, nw, nh = distribucion
     l, w, h = caja_dim
+    l_rot, w_rot = w, l
 
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
@@ -66,17 +108,39 @@ def dibuja_cajas_3d(contenedor, caja_dim, distribucion, max_cajas=None, titulo="
     draw_box(ax, (0, 0, 0), Lc, Wc, Hc, 'lightblue', alpha=0.1)
 
     cajas_dibujadas = 0
-    total_cajas = max_cajas if max_cajas is not None else nl * nw * nh
-    for z in range(nh):
-        cajas_restantes = total_cajas - cajas_dibujadas
-        if cajas_restantes <= 0:
-            break
-        cajas_en_este_nivel = min(cajas_restantes, nl * nw)
-        for i in range(cajas_en_este_nivel):
-            x = i // nw
-            y = i % nw
-            draw_box(ax, (x * l, y * w, z * h), l, w, h, 'burlywood', alpha=0.8)
-            cajas_dibujadas += 1
+    # Desempaquetar todas las distribuciones
+    bloques = [
+        (distribuciones[0], (l, w), 'burlywood'),  # principal
+        (distribuciones[1], (l_rot, w_rot), 'orange'),  # rotadas en ancho
+        (distribuciones[2], (l_rot, w_rot), 'green'),   # rotadas en largo
+        (distribuciones[3], (l_rot, w_rot), 'red'),     # rotadas en esquina
+    ]
+    total_cajas = max_cajas if max_cajas is not None else sum(nl * nw * nh for (nl, nw, nh), _, _ in bloques)
+    for idx, (dist, (lx, wx), color) in enumerate(bloques):
+        nl, nw, nh = dist
+        for z in range(nh):
+            for x in range(nl):
+                for y in range(nw):
+                    if cajas_dibujadas >= total_cajas:
+                        break
+                    # Calcular offset según bloque
+                    if idx == 0:
+                        x_offset = x * lx
+                        y_offset = y * wx
+                    elif idx == 1:
+                        x_offset = x * lx
+                        y_offset = nw1 * w + y * wx
+                    elif idx == 2:
+                        x_offset = nl1 * l + x * lx
+                        y_offset = y * wx
+                    else:  # esquina
+                        x_offset = nl1 * l + x * lx
+                        y_offset = nw1 * w + y * wx
+                    # Limitar para que no desborde el contenedor
+                    if (x_offset + lx > Lc) or (y_offset + wx > Wc) or (z * h + h > Hc):
+                        continue
+                    draw_box(ax, (x_offset, y_offset, z * h), lx, wx, h, color, alpha=0.8)
+                    cajas_dibujadas += 1
 
     ax.set_xlabel('Length (mm)')
     ax.set_ylabel('Width (mm)')
@@ -142,7 +206,8 @@ def main():
         # Calculate maximum possible stackability based on current dimensions
         operative_dim = DIMENSIONES_OPERATIVAS[container_sel]
         box_dim = (box_length, box_width, box_height)
-        _, _, (nl, nw, nh) = calcula_cajas(operative_dim, box_dim, 9999)
+        _, _, (dist1, dist2, dist3, dist4) = calcula_cajas(operative_dim, box_dim, 9999)
+        nl, nw, nh = dist1
         max_stacking_possible = nh
         
         # Stackability with custom display format
@@ -185,10 +250,11 @@ def main():
             max_container_weight = PESOS_MAXIMOS[container_sel]
             box_dim = (box_length, box_width, box_height)
             # Calculate the real maximum stacking possible
-            _, _, (nl, nw, nh) = calcula_cajas(operative_dim, box_dim, 9999)
+            _, _, (dist1, dist2, dist3, dist4) = calcula_cajas(operative_dim, box_dim, 9999)
+            nl, nw, nh = dist1
             max_stacking_possible = nh
-            total_by_volume, rotation, distribution = calcula_cajas(operative_dim, box_dim, min(max_stacking, max_stacking_possible))
-            box_volume = (rotation[0] / 1000) * (rotation[1] / 1000) * (rotation[2] / 1000)
+            total_by_volume, rotation, distribuciones = calcula_cajas(operative_dim, box_dim, min(max_stacking, max_stacking_possible))
+            box_volume = (box_dim[0] / 1000) * (box_dim[1] / 1000) * (box_dim[2] / 1000)
             total_usable_volume = box_volume * total_by_volume
             total_external_volume = (external_dim[0] / 1000) * (external_dim[1] / 1000) * (external_dim[2] / 1000)
             volume_saturation = total_usable_volume / total_external_volume * 100
@@ -199,31 +265,19 @@ def main():
             realistic_volume = box_volume * realistic_ucm
             realistic_volume_saturation = realistic_volume / total_external_volume * 100
             realistic_weight = box_weight * realistic_ucm
-            # Calcular niveles y última capa para el mensaje usando la distribución real
-            dist_nl, dist_nw, dist_nh = distribution
-            dist_levels = realistic_ucm // (dist_nl * dist_nw) if dist_nl * dist_nw > 0 else 0
-            dist_last_level = realistic_ucm % (dist_nl * dist_nw) if dist_nl * dist_nw > 0 else 0
-            if (dist_levels == 0 and dist_last_level > 0) and max_stacking > 1:
-                st.warning("⚠️ The maximum stacking for this configuration is 0/1. Value adjusted.")
-            elif max_stacking > max_stacking_possible:
-                if max_stacking_possible <= 1:
-                    st.warning("⚠️ The maximum stacking for this configuration is 0/1. Value adjusted.")
-                else:
-                    max_stackability_display = max_stacking_possible - 1
-                    st.warning(f"⚠️ The maximum stacking for this configuration is {max_stackability_display}/1. Value adjusted.")
-
+            # Mostrar detalles de ambas distribuciones
             st.success(f"🔢 Realistic UCM (weight limited): **{realistic_ucm}**")
-            st.write(f"Best rotation (LxWxH): **{rotation}**")
-            # Calculate the actual distribution used in the drawing
-            levels = realistic_ucm // (distribution[0] * distribution[1])
-            last_level = realistic_ucm % (distribution[0] * distribution[1])
-            if levels == 0 and last_level > 0:
-                used_distribution = f"{last_level} in one level"
-            elif last_level == 0:
-                used_distribution = f"{distribution[0]} x {distribution[1]} x {levels}"
-            else:
-                used_distribution = f"{distribution[0]} x {distribution[1]} x {levels} + {last_level} on the last level"
-            st.write(f"Distribution (UCM): **{used_distribution}**")
+            st.write(f"Best main rotation (LxWxH): **{rotation}**")
+            # Mostrar cómo se distribuyen las cajas (cuatro bloques)
+            (nl1, nw1, nh), (nl2, nw2, nh2), (nl3, nw3, nh3), (nl4, nw4, nh4) = distribuciones
+            texto_dist = f"Main: {nl1} x {nw1} x {nh}"
+            if nl2 > 0 and nw2 > 0:
+                texto_dist += f" + Rotated W: {nl2} x {nw2} x {nh2}"
+            if nl3 > 0 and nw3 > 0:
+                texto_dist += f" + Rotated L: {nl3} x {nw3} x {nh3}"
+            if nl4 > 0 and nw4 > 0:
+                texto_dist += f" + Corner: {nl4} x {nw4} x {nh4}"
+            st.write(f"Distribution (UCM): **{texto_dist}**")
             st.write(f"📦 Volume per UCM: **{box_volume:.3f} m³**")
             st.write(f"📏 Total volume (realistic): **{realistic_volume:.2f} m³**")
             st.write(f"🧱 Volume saturation (realistic): **{realistic_volume_saturation:.2f}%**")
@@ -238,7 +292,7 @@ def main():
     with col_right:
         if 'calculate' in locals() and calculate:
             st.markdown("<h3 style='text-align: center;'>3D UMs Distribution</h3>", unsafe_allow_html=True)
-            dibuja_cajas_3d(operative_dim, rotation, distribution, max_cajas=realistic_ucm, titulo="Limited by max volume & weight")
+            dibuja_cajas_3d(operative_dim, box_dim, distribuciones, max_cajas=realistic_ucm, titulo="Limited by max volume & weight")
 
 def run():
     main()
