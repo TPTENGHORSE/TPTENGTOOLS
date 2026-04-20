@@ -165,7 +165,7 @@ with col_info:
 # --- TIMELINE (Gantt stays here; controls will be rendered below) ---
 st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
 
-# Render the info row (ID, Carrier, Shipper, ILN/Supplier, PLANT) in the wide column
+# Render the info row (ID, Carrier, Shipper, ILN/FF, PLANT) in the wide column
 with col_timeline:
     st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
     info_cols = st.columns([1.0, 1.2, 1.2, 1.0, 1.0], gap="medium")
@@ -192,11 +192,11 @@ with col_timeline:
         if row is not None and len(df_vtt.columns) > 8:
             try:
                 col_i = df_vtt.columns[8]
-                st.markdown(render_box('ILN/Supplier', row.get(col_i, "")), unsafe_allow_html=True)
+                st.markdown(render_box('ILN/FF', row.get(col_i, "")), unsafe_allow_html=True)
             except Exception:
-                st.info("No se pudo leer la columna I (ILN/Supplier) o no hay coincidencia.")
+                st.info("No se pudo leer la columna I (ILN/FF) o no hay coincidencia.")
         else:
-            st.info("No se pudo leer la columna I (ILN/Supplier) o no hay coincidencia.")
+            st.info("No se pudo leer la columna I (ILN/FF) o no hay coincidencia.")
     with info_cols[4]:
         if row is not None and 'Name Destin Site' in df_vtt.columns:
             st.markdown(render_box('PLANT', row['Name Destin Site']), unsafe_allow_html=True)
@@ -1113,11 +1113,11 @@ st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 # --- KPIs al final ---
 st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
 
-# Supplier>POL
+# SUPPLIER>POL
 col_label, col_value = st.columns([1, 3], gap="small")
 with col_label:
     st.markdown(
-        "<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Supplier>POL</div>",
+        "<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>SUPPLIER>POL</div>",
         unsafe_allow_html=True,
     )
 with col_value:
@@ -1127,7 +1127,7 @@ with col_value:
             unsafe_allow_html=True,
         )
     else:
-        st.info("No existe la columna Supplier>POL o no hay coincidencia.")
+        st.info("No existe la columna SUPPLIER>POL o no hay coincidencia.")
 
 # Transit Time
 col_label_tt, col_value_tt = st.columns([1, 3], gap="small")
@@ -1203,7 +1203,7 @@ composite_html += "<div id='timeline_capture' style='position:absolute; left:-10
 composite_html += "<div style='font-size:22px; font-weight:700; margin-bottom:8px;'>VTT View</div>"
 composite_html += f"<div style='margin-bottom:8px;'><b>POL:</b> {capture_pol} &nbsp;&nbsp; <b>POD:</b> {capture_pod} &nbsp;&nbsp; <b>Days to Show:</b> {capture_days}</div>"
 
-# Add ID, Carrier, Shipper, ILN/Supplier, PLANT row (E/D irá abajo del timeline)
+# Add ID, Carrier, Shipper, ILN/FF, PLANT row (E/D irá abajo del timeline)
 _id_val = _carrier_val = _shipper_val = _iln_val = _plant_val = _ed_val = ""
 if row is not None:
     try:
@@ -1235,7 +1235,7 @@ composite_html += "<div style='display:grid; grid-template-columns: max-content 
 composite_html += f"<div style='font-weight:bold;'>ID-Cartography:</div><div>{_id_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>Carrier:</div><div>{_carrier_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>Shipper:</div><div>{_shipper_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>ILN/Supplier:</div><div>{_iln_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>ILN/FF:</div><div>{_iln_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>PLANT:</div><div>{_plant_val}</div>"
 composite_html += "</div>"
 
@@ -1262,7 +1262,7 @@ except Exception:
 composite_html += "<hr style='margin:16px 0;'>"
 composite_html += "<div style='font-size:18px; font-weight:700; margin-bottom:8px;'>KPIs</div>"
 composite_html += "<div style='display:grid; grid-template-columns: 220px 1fr; row-gap:6px; column-gap:12px;'>"
-composite_html += "<div style='font-weight:bold;'>Supplier>POL</div>"
+composite_html += "<div style='font-weight:bold;'>SUPPLIER>POL</div>"
 if row is not None and "Parts Vanning" in df_vtt.columns:
     composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Parts Vanning']}</div>"
 else:
@@ -1277,6 +1277,10 @@ if row is not None:
         _sum = float(sum(_parts))
         _tt_display = int(_sum) if abs(_sum - int(_sum)) < 1e-9 else round(_sum, 2)
 composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{_tt_display if _tt_display is not None else '-'}</div>"
+
+# Insert OVS SAP STAGES separator row
+composite_html += "<div style='font-weight:bold;'>OVS SAP STAGES</div>"
+composite_html += "<div style='padding:4px 8px; border:1px solid #fff; border-radius:4px; background:#fff;'>&nbsp;</div>"
 composite_html += "<div style='font-weight:bold;'>Customer Leadtime</div>"
 if row is not None and 'Cust. Leadtime' in df_vtt.columns:
     composite_html += f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa;'>{row['Cust. Leadtime']}</div>"
@@ -1487,7 +1491,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     # Info row if available
     if row is not None:
         info_pairs = []
-        for label, colname in [('ID-Cartography','ID'), ('Carrier','Carrier'), ('Shipper', df_vtt.columns[10] if len(df_vtt.columns) > 10 else None), ('ILN/Supplier', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None), ('PLANT','Name Destin Site'), ('E/D','Expiration Date')]:
+        for label, colname in [('ID-Cartography','ID'), ('Carrier','Carrier'), ('Shipper', df_vtt.columns[10] if len(df_vtt.columns) > 10 else None), ('ILN/FF', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None), ('PLANT','Name Destin Site'), ('E/D','Expiration Date')]:
             val = row.get(colname, '') if (colname and colname in df_vtt.columns) else ''
             info_pairs.append((label, val))
         c = 1
@@ -1588,7 +1592,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
     # KPIs block under the table
     rr = r + len(time_labels) + 2
-    ws.cell(row=rr, column=1, value='Supplier>POL').font = bold
+    ws.cell(row=rr, column=1, value='SUPPLIER>POL').font = bold
     if row is not None and 'Parts Vanning' in df_vtt.columns:
         ws.cell(row=rr, column=2, value=str(row['Parts Vanning']))
     rr += 1

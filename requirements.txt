@@ -20,3 +20,4 @@ kiwisolver
 #(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit
 
 #Set-Location -Path "c:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis"; & ".\.venv\Scripts\python.exe" -m Quotations.generate_quote
+# POD DETENTION

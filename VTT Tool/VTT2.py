@@ -176,7 +176,7 @@ if row is not None and 'Safety stock' in df_vtt.columns:
 # --- TIMELINE (Gantt stays here; controls will be rendered below) ---
 st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
 
-# Render the info row (ID, Carrier/FF, Shipper, ILN/Supplier, PLANT) in the wide column
+# Render the info row (ID, Carrier, Shipper, ILN/FF, PLANT) in the wide column
 with col_timeline:
     st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
     info_cols = st.columns([1.0, 1.2, 1.2, 1.0, 1.0], gap="medium")
@@ -187,9 +187,9 @@ with col_timeline:
             st.info("No existe la columna ID-Cartography (ID) o no hay coincidencia.")
     with info_cols[1]:
         if row is not None and 'Carrier' in df_vtt.columns:
-            st.markdown(render_box('Carrier/FF', row['Carrier']), unsafe_allow_html=True)
+            st.markdown(render_box('Carrier', row['Carrier']), unsafe_allow_html=True)
         else:
-            st.info("No existe la columna Carrier/FF (Carrier) o no hay coincidencia.")
+            st.info("No existe la columna Carrier (Carrier) o no hay coincidencia.")
     with info_cols[2]:
         if row is not None and len(df_vtt.columns) > 10:
             try:
@@ -203,11 +203,11 @@ with col_timeline:
         if row is not None and len(df_vtt.columns) > 8:
             try:
                 col_i = df_vtt.columns[8]
-                st.markdown(render_box('ILN/Supplier', row.get(col_i, "")), unsafe_allow_html=True)
+                st.markdown(render_box('ILN/FF', row.get(col_i, "")), unsafe_allow_html=True)
             except Exception:
-                st.info("No se pudo leer la columna I (ILN/Supplier) o no hay coincidencia.")
+                st.info("No se pudo leer la columna I (ILN/FF) o no hay coincidencia.")
         else:
-            st.info("No se pudo leer la columna I (ILN/Supplier) o no hay coincidencia.")
+            st.info("No se pudo leer la columna I (ILN/FF) o no hay coincidencia.")
     with info_cols[4]:
         if row is not None and 'Name Destin Site' in df_vtt.columns:
             st.markdown(render_box('PLANT', row['Name Destin Site']), unsafe_allow_html=True)
@@ -277,7 +277,7 @@ table_html += "</tr></thead><tbody>"
 # Etiquetas de filas
 time_labels = [
     "1. Day Customer Order",
-    "2. Day ILN/Supplier Order",
+    "2. Day ILN/FF Order",
     "3. First Receipt Days",
     "4. Pack. prep. & load",
     "5. Transport to POL",
@@ -1127,7 +1127,7 @@ st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
 
 """Cálculo base de KPIs (vista numérica oculta, se usa para Gantt y export)."""
-# Customer Leadtime (CLT) toma el valor de '14 Rounding' (Final Day)
+# CUSTOMER LEADTIME (CLT) toma el valor de '14 Rounding' (Final Day)
 
 # POL>POD (Transit time + Time for security)
 total_tt = None
@@ -1138,7 +1138,7 @@ if row is not None:
     if parts:
         total_tt = float(sum(parts))
 
-# POD>DET (Customs clearence final day minus Days flexibility 1)
+# POD DETENTION (Customs clearence final day minus Days flexibility 1)
 pod_det = None
 try:
     if row is not None:
@@ -1237,7 +1237,7 @@ try:
     # Duraciones de KPIs como enteros
     # CLT usa el valor de Final Day de 14. Rounding
     kpi_clt = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    # Supplier>POL = Final Day de 8. ETD - Day de 3. First Receipt Days + 1
+    # SUPPLIER>POL = Final Day de 8. ETD - Day de 3. First Receipt Days + 1
     try:
         # Final Day de 8. ETD
         final_day_8 = _final_day_for_step(7, row, df_vtt)
@@ -1246,7 +1246,7 @@ try:
         kpi_sup_pol = final_day_8 - day_3 + 1
         # st.write debug eliminado
     except Exception as e:
-        st.write(f"[DEBUG] Error calculando Supplier>POL: {e}")
+        st.write(f"[DEBUG] Error calculando SUPPLIER>POL: {e}")
         kpi_sup_pol = 0
     # total_tt, pod_det y pod_plant ya se calcularon arriba
     kpi_pol_pod = _coerce_to_int(total_tt) if ("total_tt" in locals() and total_tt is not None and not pd.isna(total_tt)) else 0
@@ -1268,7 +1268,7 @@ try:
     # CLT debe iniciar desde la primera semana (primer día visible del timeline)
     clt_start_idx = 1
 
-    # El inicio de Supplier>POL debe ser igual al día de 3. First Receipt Days (columna Day)
+    # El inicio de SUPPLIER>POL debe ser igual al día de 3. First Receipt Days (columna Day)
     start_sup = day_3 if (day_3 and day_3 > 0) else 0
 
     # Definir función antes de su uso (mover aquí para evitar error de función no definida)
@@ -1336,7 +1336,7 @@ try:
     # start_sup ya fue definido arriba como el día de 3. First Receipt Days
     offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
     # El inicio de POL>POD debe ser igual al día de 9. Transit Duration (ETD>ETA) en Day
-    # El inicio de POL>POD debe ser un día antes de que termine Supplier>POL
+    # El inicio de POL>POD debe ser un día antes de que termine SUPPLIER>POL
     if start_sup and kpi_sup_pol:
         start_pol_pod = start_sup + kpi_sup_pol - 1
     else:
@@ -1344,13 +1344,13 @@ try:
 
     # Forzar que el inicio nunca sea menor que 1
     start_pol_pod = max(1, start_pol_pod)
-    # El inicio de POD>DET debe ser justo cuando termina POL>POD
+    # El inicio de POD DETENTION debe ser justo cuando termina POL>POD
     start_pod_det = start_pol_pod + kpi_pol_pod if (start_pol_pod and kpi_pol_pod > 0) else 0
-    # El inicio de POD>PLANT debe ser justo cuando termina POD>DET
+    # El inicio de POD>PLANT debe ser justo cuando termina POD DETENTION
     start_pod_plant = start_pod_det + kpi_pod_det if (start_pod_det and kpi_pod_det > 0) else 0
 
     # Línea nueva: customer leadtime
-    # Customer Leadtime (CLT) = Final Day de 14. Rounding - Final Day de 1. Day Customer Order + 1
+    # CUSTOMER LEADTIME (CLT) = Final Day de 14. Rounding - Final Day de 1. Day Customer Order + 1
     try:
         final_day_14 = _final_day_for_step(13, row, df_vtt)
         final_day_1 = _final_day_for_step(0, row, df_vtt)
@@ -1395,12 +1395,12 @@ try:
         start_day_customer_order = 0
 
     kpi_rows = [
-        ("Customer Leadtime (CLT)", customer_leadtime, start_day_customer_order),
+        ("CUSTOMER LEADTIME (CLT)", customer_leadtime, start_day_customer_order),
         ("Transportation Duration", transportation_duration, start_transport_to_pol),
-        ("Supplier>POL", kpi_sup_pol, start_sup),
+        ("SUPPLIER>POL", kpi_sup_pol, start_sup),
         # Para POL>POD, la duración es kpi_pol_pod (Transit time + Time for security)
         ("POL>POD", kpi_pol_pod, start_pol_pod),
-        ("POD>DET", kpi_pod_det, start_pod_det),
+        ("POD DETENTION", kpi_pod_det, start_pod_det),
         ("POD>PLANT", kpi_pod_plant, start_pod_plant),
     ]
 
@@ -1523,7 +1523,7 @@ composite_html += "<div id='timeline_capture' style='position:absolute; left:-10
 composite_html += "<div style='font-size:22px; font-weight:700; margin-bottom:8px;'>VTT View</div>"
 composite_html += f"<div style='margin-bottom:8px;'><b>POL:</b> {capture_pol} &nbsp;&nbsp; <b>POD:</b> {capture_pod} &nbsp;&nbsp; <b>Days to Show:</b> {capture_days}</div>"
 
-# Add ID, Carrier/FF, Shipper, ILN/Supplier, PLANT row (E/D y Commodity irán abajo del timeline)
+# Add ID, Carrier, Shipper, ILN/FF, PLANT row (E/D y Commodity irán abajo del timeline)
 _id_val = _carrier_val = _shipper_val = _iln_val = _plant_val = _commodity_val = _ed_val = ""
 if row is not None:
     try:
@@ -1563,9 +1563,9 @@ if row is not None:
 
 composite_html += "<div style='display:grid; grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; gap:6px 12px; align-items:center; margin:6px 0 10px 0;'>"
 composite_html += f"<div style='font-weight:bold;'>ID-Cartography:</div><div>{_id_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>Carrier/FF:</div><div>{_carrier_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>Carrier:</div><div>{_carrier_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>Shipper:</div><div>{_shipper_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>ILN/Supplier:</div><div>{_iln_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>ILN/FF:</div><div>{_iln_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>PLANT:</div><div>{_plant_val}</div>"
 composite_html += "</div>"
 
@@ -1824,9 +1824,9 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
         for label, colname in [
             ('ID-Cartography','ID'),
-            ('Carrier/FF','Carrier'),
+            ('Carrier','Carrier'),
             ('Shipper', df_vtt.columns[10] if len(df_vtt.columns) > 10 else None),
-            ('ILN/Supplier', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None),
+            ('ILN/FF', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None),
             ('PLANT','Name Destin Site'),
             ('Commodity', commodity_col),
             ('E/D','Expiration Date')
@@ -1982,7 +1982,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
         pod_plant_val = None
     kpi_pod_plant = _coerce_to_int(pod_plant_val) if pod_plant_val is not None else 0
 
-    # Calcular inicio real de la etapa 4 (Pack. prep. & load) para alinear Supplier>POL
+    # Calcular inicio real de la etapa 4 (Pack. prep. & load) para alinear SUPPLIER>POL
     step4_start_idx = 0
     try:
         if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns:
@@ -2014,7 +2014,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     start_pod_plant = offset + 1 if kpi_pod_plant > 0 else 0
 
     # Línea nueva: customer leadtime
-    # Customer Leadtime (CLT) = 14. Rounding
+    # CUSTOMER LEADTIME (CLT) = 14. Rounding
     customer_leadtime = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
     # Transportation Duration = Final Day de 14. Rounding - Final Day de 5. Transport to POL + 1
     try:
@@ -2024,11 +2024,11 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     except Exception:
         transportation_duration = 0
     kpi_rows = [
-        ("Customer Leadtime (CLT)", customer_leadtime, start_clt),
+        ("CUSTOMER LEADTIME (CLT)", customer_leadtime, start_clt),
         ("Transportation Duration", transportation_duration, start_clt),
-        ("Supplier>POL", kpi_sup_pol, start_sup),
+        ("SUPPLIER>POL", kpi_sup_pol, start_sup),
         ("POL>POD", kpi_pol_pod, start_pol_pod),
-        ("POD>DET", kpi_pod_det, start_pod_det),
+        ("POD DETENTION", kpi_pod_det, start_pod_det),
         ("POD>PLANT", kpi_pod_plant, start_pod_plant),
     ]
 
