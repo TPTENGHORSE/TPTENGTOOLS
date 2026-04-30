@@ -2114,14 +2114,32 @@ if st.button("Generate files", key="generate_files"):
         timeline_days=timeline_days,
     )
     excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
+
+    # Obtener valores para el nombre del archivo
+    pol_val = st.session_state.get('pol_select', '').replace(' ', '_')
+    pod_val = st.session_state.get('pod_select', '').replace(' ', '_')
+    # Obtener shipper de la fila seleccionada (columna 10)
+    if row is not None and len(df_vtt.columns) > 10:
+        shipper_col = df_vtt.columns[10]
+        shipper_val = str(row.get(shipper_col, '')).replace(' ', '_')
+    else:
+        shipper_val = ''
+    # Si alguno está vacío, poner UNKNOWN
+    pol_val = pol_val if pol_val else 'UNKNOWN'
+    pod_val = pod_val if pod_val else 'UNKNOWN'
+    shipper_val = shipper_val if shipper_val else 'UNKNOWN'
+    base_file_name = f"VTT_{pol_val}_{pod_val}_{shipper_val}"
+    excel_file_name = f"{base_file_name}.xlsx"
+    image_file_name = f"{base_file_name}.png"
+
     st.markdown(f"""
     <div style='width:100%; display:flex; justify-content:center; align-items:center; margin:32px 0;'>
-        <a id='excelBtn' href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_b64}' download='VTT_FULL_VIEW.xlsx' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:24px;'>Excel file</a>
+        <a id='excelBtn' href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_b64}' download='{excel_file_name}' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:24px;'>Excel file</a>
         <button id='imgBtn' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;'>Image</button>
     </div>
     """, unsafe_allow_html=True)
     components.html(
-        """
+        """ 
         <script src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'></script>
         <script>
         (function(){
@@ -2156,9 +2174,8 @@ if st.button("Generate files", key="generate_files"):
                                 var d = parentDoc();
                                 var url = URL.createObjectURL(blob);
                                 var a = d.createElement('a');
-                                var ts = new Date().toISOString().slice(0,19).replace(/[.:T]/g,'-');
                                 a.href = url;
-                                a.download = 'VTTFULL_VIEW_' + ts + '.png';
+                                a.download = '__IMAGE_FILE_NAME__';
                                 d.body.appendChild(a);
                                 a.click();
                                 setTimeout(function(){ d.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
@@ -2171,6 +2188,6 @@ if st.button("Generate files", key="generate_files"):
             bind();
         })();
         </script>
-        """,
+        """.replace('__IMAGE_FILE_NAME__', image_file_name),
         height=10,
     )
