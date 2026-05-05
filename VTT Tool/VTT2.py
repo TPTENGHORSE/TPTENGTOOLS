@@ -54,6 +54,22 @@ def _coerce_to_int(val):
     except Exception:
         return 0
 
+
+def _due_date_day_plus_value(row, df_vtt):
+    try:
+        if row is None:
+            return 7
+
+        row_id = str(row.get('ID', '')).strip().upper() if 'ID' in df_vtt.columns else ''
+        row_pol = str(row.get('POL', '')).strip().upper() if 'POL' in df_vtt.columns else ''
+        row_pod = str(row.get('POD', '')).strip().upper() if 'POD' in df_vtt.columns else ''
+
+        if row_id == 'O001' and row_pol == 'CNSHA' and row_pod == 'PTLEI':
+            return 5
+    except Exception:
+        pass
+    return 7
+
 # Load data from new Excel (VTT DATA.xlsx)
 vtt_data_path = os.path.join(os.path.dirname(__file__), "VTT DATA.xlsx")
 df_vtt = pd.read_excel(vtt_data_path)
@@ -464,7 +480,16 @@ for i in range(time_rows):
                 else:
                     cell_content = "-"
             elif j == 2:
-                cell_content = "0"
+                if row is not None and 'First Day to POL' in df_vtt.columns:
+                    val = row['First Day to POL']
+                    if pd.isna(val):
+                        cell_content = "-"
+                    elif val == 0:
+                        cell_content = "0"
+                    else:
+                        cell_content = str(val)
+                else:
+                    cell_content = "0"
             elif j == 3:
                 if row is not None and '6 First Day to POL' in df_vtt.columns:
                     val = row['6 First Day to POL']
@@ -481,7 +506,8 @@ for i in range(time_rows):
                     dias_final_day = int(row['6 First Day to POL']) if row is not None and '6 First Day to POL' in df_vtt.columns else 0
                 except Exception:
                     dias_final_day = 0
-                paint_len = 1  # Day+ = 0 -> solo último día
+                day_plus_val = _coerce_to_int(row['First Day to POL']) if row is not None and 'First Day to POL' in df_vtt.columns else 0
+                paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
@@ -973,7 +999,7 @@ for i in range(time_rows):
                 else:
                     cell_content = "-"
             elif j == 2:
-                cell_content = "7"
+                cell_content = str(_due_date_day_plus_value(row, df_vtt))
             elif j == 3:
                 if row is not None and '15 Due Date' in df_vtt.columns:
                     val = row['15 Due Date']
@@ -990,7 +1016,7 @@ for i in range(time_rows):
                     dias_final_day = int(row['15 Due Date']) if row is not None and '15 Due Date' in df_vtt.columns else 0
                 except Exception:
                     dias_final_day = 0
-                day_plus_val = 7
+                day_plus_val = _due_date_day_plus_value(row, df_vtt)
                 paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
@@ -1229,7 +1255,7 @@ def _step_start_index(step_index, row, df_vtt):
 
 
 def _day_plus_value_for_step(i, row, df_vtt):
-    if i in (0, 1, 5, 6, 7):
+    if i in (0, 1, 6, 7):
         return 0
     if i == 2:
         return _coerce_to_int(row['3 .1 Time of Recept in ILN']) if row is not None and '3 .1 Time of Recept in ILN' in df_vtt.columns else 0
@@ -1237,6 +1263,8 @@ def _day_plus_value_for_step(i, row, df_vtt):
         return _coerce_to_int(row['4.2 Packaging préparation & loading']) if row is not None and '4.2 Packaging préparation & loading' in df_vtt.columns else 0
     if i == 4:
         return _coerce_to_int(row['5.2 Transport ILN to POL']) if row is not None and '5.2 Transport ILN to POL' in df_vtt.columns else 0
+    if i == 5:
+        return _coerce_to_int(row['First Day to POL']) if row is not None and 'First Day to POL' in df_vtt.columns else 0
     if i == 8:
         return _coerce_to_int(row['Transit time']) if row is not None and 'Transit time' in df_vtt.columns else 0
     if i == 9:
@@ -1254,7 +1282,7 @@ def _day_plus_value_for_step(i, row, df_vtt):
             return _coerce_to_int(row['Round'])
         return 0
     if i == 14:
-        return 7
+        return _due_date_day_plus_value(row, df_vtt)
     if i == 15:
         return 7
     return 0
