@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 from io import BytesIO
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import base64
@@ -13,6 +14,7 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from PIL import Image as PILImage, ImageDraw, ImageFont
 
 
 def render_box(label, value):
@@ -31,13 +33,11 @@ def _coerce_to_int(val):
             return 0
     except Exception:
         pass
-    # direct numeric
     if isinstance(val, (int, float)):
         try:
             return int(round(float(val)))
         except Exception:
             return 0
-    # strings with numbers (e.g., "12 días", "~ 3.5", "4,0")
     if isinstance(val, str):
         s = val.strip()
         if not s:
@@ -49,7 +49,6 @@ def _coerce_to_int(val):
                 return int(round(num))
             except Exception:
                 return 0
-    # fallback
     try:
         return int(val)
     except Exception:
@@ -88,7 +87,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Título principal centrado de la herramienta
 st.markdown(
     "<h1 style='text-align:center; margin:4px 0 12px 0;'>VTT Tool</h1>",
     unsafe_allow_html=True,
@@ -97,7 +95,6 @@ st.markdown(
 col_info, col_timeline = st.columns([1, 4], gap="small")
 
 with col_info:
-    # Filtros POL y POD en una fila
     col_pol, col_pod = st.columns([1, 1], gap="medium")
     pol_options = df_vtt['POL'].dropna().astype(str).unique().tolist() if 'POL' in df_vtt.columns else []
     pod_options = df_vtt['POD'].dropna().astype(str).unique().tolist() if 'POD' in df_vtt.columns else []
@@ -106,25 +103,19 @@ with col_info:
     if 'pod_select' not in st.session_state:
         st.session_state['pod_select'] = pod_options[0] if pod_options else ''
     with col_pol:
-        # Label grande para POL y ocultar la etiqueta por defecto del widget
         st.markdown("<div style='font-size:28px; font-weight:700; line-height:1; margin:0 0 6px;'>POL</div>", unsafe_allow_html=True)
         selected_pol = st.selectbox("POL", pol_options, key="pol_select", label_visibility="collapsed")
-    # Limitar PODs según el POL seleccionado
     filtered_pod_options = (
         df_vtt[df_vtt['POL'].astype(str) == st.session_state['pol_select']]['POD']
         .dropna().astype(str).unique().tolist()
         if 'POD' in df_vtt.columns else []
     )
     with col_pod:
-        # Label grande para POD y ocultar la etiqueta por defecto del widget
         st.markdown("<div style='font-size:28px; font-weight:700; line-height:1; margin:0 0 6px;'>POD</div>", unsafe_allow_html=True)
         selected_pod = st.selectbox("POD", filtered_pod_options, key="pod_select", label_visibility="collapsed")
-    # Mantener POD válido cuando cambie POL
     if selected_pod not in filtered_pod_options and filtered_pod_options:
         st.session_state['pod_select'] = filtered_pod_options[0]
-    # Filtrar por POL y POD seleccionados
     filtered_df = df_vtt[(df_vtt['POL'].astype(str) == st.session_state['pol_select']) & (df_vtt['POD'].astype(str) == st.session_state['pod_select'])]
-    # Si hay múltiples filas para el mismo par POL/POD permitir elegir el registro específico
     if not filtered_df.empty:
         if len(filtered_df) > 1:
             def build_label(r):
@@ -149,7 +140,6 @@ with col_info:
 
             option_indices = list(filtered_df.index)
             option_labels = [build_label(filtered_df.loc[idx]) for idx in option_indices]
-            # Valor por defecto en session_state
             if 'record_select' not in st.session_state or st.session_state['record_select'] not in option_indices:
                 st.session_state['record_select'] = option_indices[0]
             selected_label = st.selectbox(
@@ -164,19 +154,12 @@ with col_info:
     else:
         row = None
 
-    # E/D se muestra más abajo del timeline y antes del botón Generate files
-
-# KPIs movidos al final
-
-# Valor base para Customer Safety STOCK usado más abajo
 safety_stock_val = None
 if row is not None and 'Safety stock' in df_vtt.columns:
     safety_stock_val = row['Safety stock']
 
-# --- TIMELINE (Gantt stays here; controls will be rendered below) ---
 st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
 
-# Render the info row (ID, Carrier, Shipper, ILN/FF, PLANT) in the wide column
 with col_timeline:
     st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
     info_cols = st.columns([1.0, 1.2, 1.2, 1.0, 1.0], gap="medium")
@@ -216,9 +199,7 @@ with col_timeline:
 
 time_cols_fixed = 4
 today = datetime.today()
-# Calcular el lunes de la semana actual
 start_date = today - timedelta(days=today.weekday())
-# Leer el valor del slider desde session_state (el control se renderiza al final)
 num_days = int(st.session_state.get("days_slider_timeline", 110))
 timeline_days = [start_date + timedelta(days=i) for i in range(num_days)]
 time_cols = time_cols_fixed + num_days
@@ -1231,178 +1212,139 @@ def _final_day_for_step(i, row, df_vtt):
     except Exception:
         return 0
 
-# Guardar HTML del VTT SUMMARY para reutilizarlo en la captura de imagen
-kpi_gantt_html = ""
-try:
-    # Duraciones de KPIs como enteros
-    # CLT usa el valor de Final Day de 14. Rounding
-    kpi_clt = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    # SUPPLIER>POL = Final Day de 8. ETD - Day de 3. First Receipt Days + 1
+
+def _step_start_index(step_index, row, df_vtt):
     try:
-        # Final Day de 8. ETD
+        final_day = _final_day_for_step(step_index, row, df_vtt)
+        if not final_day:
+            return 0
+
+        day_plus = _day_plus_value_for_step(step_index, row, df_vtt)
+        paint_len = day_plus if isinstance(day_plus, int) and day_plus > 0 else 1
+        if step_index in (0, 1, 5, 6, 7):
+            paint_len = 1
+        return max(1, final_day - paint_len + 1)
+    except Exception:
+        return 0
+
+
+def _day_plus_value_for_step(i, row, df_vtt):
+    if i in (0, 1, 5, 6, 7):
+        return 0
+    if i == 2:
+        return _coerce_to_int(row['3 .1 Time of Recept in ILN']) if row is not None and '3 .1 Time of Recept in ILN' in df_vtt.columns else 0
+    if i == 3:
+        return _coerce_to_int(row['4.2 Packaging préparation & loading']) if row is not None and '4.2 Packaging préparation & loading' in df_vtt.columns else 0
+    if i == 4:
+        return _coerce_to_int(row['5.2 Transport ILN to POL']) if row is not None and '5.2 Transport ILN to POL' in df_vtt.columns else 0
+    if i == 8:
+        return _coerce_to_int(row['Transit time']) if row is not None and 'Transit time' in df_vtt.columns else 0
+    if i == 9:
+        return _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
+    if i == 10:
+        return _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+    if i == 11:
+        return _coerce_to_int(row['Cust.']) if row is not None and 'Cust.' in df_vtt.columns else 0
+    if i == 12:
+        return _coerce_to_int(row['Trpt POD/PFI vers Usine']) if row is not None and 'Trpt POD/PFI vers Usine' in df_vtt.columns else 0
+    if i == 13:
+        if row is not None and 'Round.' in df_vtt.columns:
+            return _coerce_to_int(row['Round.'])
+        if row is not None and 'Round' in df_vtt.columns:
+            return _coerce_to_int(row['Round'])
+        return 0
+    if i == 14:
+        return 7
+    if i == 15:
+        return 7
+    return 0
+
+
+def _build_kpi_rows(row, df_vtt):
+    total_tt = None
+    if row is not None:
+        t1 = pd.to_numeric(row.get('Transit time', None), errors='coerce') if 'Transit time' in df_vtt.columns else None
+        t2 = pd.to_numeric(row.get('Time for security', None), errors='coerce') if 'Time for security' in df_vtt.columns else None
+        parts = [value for value in (t1, t2) if value is not None and pd.notna(value)]
+        if parts:
+            total_tt = float(sum(parts))
+
+    pod_det = None
+    try:
+        if row is not None:
+            customs_val = None
+            flex1_val = None
+            if '12 Customs Clearance' in df_vtt.columns:
+                customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
+            elif '12 Customs clearence' in df_vtt.columns:
+                customs_val = _coerce_to_int(row.get('12 Customs clearence'))
+            if '10 Days flexibility 1' in df_vtt.columns:
+                flex1_val = _coerce_to_int(row.get('10 Days flexibility 1'))
+            if customs_val and flex1_val:
+                pod_det = customs_val - flex1_val
+    except Exception:
+        pod_det = None
+
+    pod_plant = None
+    try:
+        if row is not None:
+            customs_val = None
+            rounding_val = None
+            if '12 Customs Clearance' in df_vtt.columns:
+                customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
+            elif '12 Customs clearence' in df_vtt.columns:
+                customs_val = _coerce_to_int(row.get('12 Customs clearence'))
+            if '14 Rounding' in df_vtt.columns:
+                rounding_val = _coerce_to_int(row.get('14 Rounding'))
+            if rounding_val and customs_val:
+                pod_plant = rounding_val - customs_val
+    except Exception:
+        pod_plant = None
+
+    try:
         final_day_8 = _final_day_for_step(7, row, df_vtt)
-        # Day de 3. First Receipt Days (no usar 3.2, solo 3 First Receipt Days)
         day_3 = _coerce_to_int(row['3 First Receipt Days']) if (row is not None and '3 First Receipt Days' in df_vtt.columns) else 0
         kpi_sup_pol = final_day_8 - day_3 + 1
-        # st.write debug eliminado
-    except Exception as e:
-        st.write(f"[DEBUG] Error calculando SUPPLIER>POL: {e}")
-        kpi_sup_pol = 0
-    # total_tt, pod_det y pod_plant ya se calcularon arriba
-    kpi_pol_pod = _coerce_to_int(total_tt) if ("total_tt" in locals() and total_tt is not None and not pd.isna(total_tt)) else 0
-    kpi_pod_det = _coerce_to_int(pod_det) if ("pod_det" in locals() and pod_det is not None) else 0
-    kpi_pod_plant = _coerce_to_int(pod_plant) if ("pod_plant" in locals() and pod_plant is not None) else 0
-
-    # Calcular inicio real de la etapa 4 (Pack. prep. & load) en la zona de tiempos
-    step4_start_idx = 0
-    try:
-        if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns:
-            dias_final_day_4 = int(row['4.3 Packaging préparation & loading'])
-            day_plus_val_4 = _coerce_to_int(row['4.2 Packaging préparation & loading']) if '4.2 Packaging préparation & loading' in df_vtt.columns else 0
-            paint_len_4 = day_plus_val_4 if (day_plus_val_4 and day_plus_val_4 > 0) else 1
-            if dias_final_day_4 > 0:
-                step4_start_idx = max(1, dias_final_day_4 - paint_len_4 + 1)
     except Exception:
-        step4_start_idx = 0
+        day_3 = 0
+        kpi_sup_pol = 0
 
-    # CLT debe iniciar desde la primera semana (primer día visible del timeline)
-    clt_start_idx = 1
+    kpi_pol_pod = _coerce_to_int(total_tt) if total_tt is not None and not pd.isna(total_tt) else 0
+    kpi_pod_det = _coerce_to_int(pod_det) if pod_det is not None else 0
+    kpi_pod_plant = _coerce_to_int(pod_plant) if pod_plant is not None else 0
 
-    # El inicio de SUPPLIER>POL debe ser igual al día de 3. First Receipt Days (columna Day)
-    start_sup = day_3 if (day_3 and day_3 > 0) else 0
-
-    # Definir función antes de su uso (mover aquí para evitar error de función no definida)
-    def _final_day_for_step(i, row, df_vtt):
-        try:
-            if i == 0:
-                return int(row['1 Day Customer Order']) if row is not None and '1 Day Customer Order' in df_vtt.columns else 0
-            if i == 1:
-                return int(row['2 Day ILN Order']) if row is not None and '2 Day ILN Order' in df_vtt.columns else 0
-            if i == 2:
-                return int(row['3.2 First Receipt Days']) if row is not None and '3.2 First Receipt Days' in df_vtt.columns else 0
-            if i == 3:
-                return int(row['4.3 Packaging préparation & loading']) if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns else 0
-            if i == 4:
-                return int(row['5.3 Transport ILN to POL']) if row is not None and '5.3 Transport ILN to POL' in df_vtt.columns else 0
-            if i == 5:
-                return int(row['6 First Day to POL']) if row is not None and '6 First Day to POL' in df_vtt.columns else 0
-            if i == 6:
-                return int(row['7 Cutt off']) if row is not None and '7 Cutt off' in df_vtt.columns else 0
-            if i == 7:
-                return int(row['8 ETD']) if row is not None and '8 ETD' in df_vtt.columns else 0
-            if i == 8:
-                if row is not None and '9 ETD> ETA' in df_vtt.columns:
-                    return int(row['9 ETD> ETA'])
-                if row is not None and '9 ETD>ETA' in df_vtt.columns:
-                    return int(row['9 ETD>ETA'])
-                return 0
-            if i == 9:
-                if row is not None and '10 Days flexibility 1' in df_vtt.columns and pd.notna(row['10 Days flexibility 1']):
-                    return int(row['10 Days flexibility 1'])
-                base = None
-                if row is not None and '9 ETD> ETA' in df_vtt.columns:
-                    base = row['9 ETD> ETA']
-                elif row is not None and '9 ETD>ETA' in df_vtt.columns:
-                    base = row['9 ETD>ETA']
-                bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
-                if pd.isna(bnum):
-                    # FIX: regex string was split across lines, causing unterminated string literal error
-                    m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
-                    bnum = float(m[0]) if m else float('nan')
-                plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
-                return int(float(bnum)) + 1 + int(plus) if not pd.isna(bnum) else 0
-            if i == 10:
-                return int(row['11 Days flexibility 2']) if row is not None and '11 Days flexibility 2' in df_vtt.columns else 0
-            if i == 11:
-                if row is not None and '12 Customs Clearance' in df_vtt.columns:
-                    return int(row['12 Customs Clearance'])
-                if row is not None and '12 Customs clearence' in df_vtt.columns:
-                    return int(row['12 Customs clearence'])
-                return 0
-            if i == 12:
-                return int(row['13 Transport to Plant']) if row is not None and '13 Transport to Plant' in df_vtt.columns else 0
-            if i == 13:
-                return int(row['14 Rounding']) if row is not None and '14 Rounding' in df_vtt.columns else 0
-            if i == 14:
-                return int(row['15 Due Date']) if row is not None and '15 Due Date' in df_vtt.columns else 0
-            if i == 15:
-                return int(row['16 Manufacturing']) if row is not None and '16 Manufacturing' in df_vtt.columns else 0
-            return 0
-        except Exception:
-            return 0
-
-    # Definir inicios secuenciales como en el Gantt de la UI
-    start_clt = clt_start_idx if kpi_clt > 0 else 0
-    # start_sup ya fue definido arriba como el día de 3. First Receipt Days
-    offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
-    # El inicio de POL>POD debe ser igual al día de 9. Transit Duration (ETD>ETA) en Day
-    # El inicio de POL>POD debe ser un día antes de que termine SUPPLIER>POL
-    if start_sup and kpi_sup_pol:
-        start_pol_pod = start_sup + kpi_sup_pol - 1
-    else:
-        start_pol_pod = 0
-
-    # Forzar que el inicio nunca sea menor que 1
-    start_pol_pod = max(1, start_pol_pod)
-    # El inicio de POD DETENTION debe ser justo cuando termina POL>POD
+    start_sup = day_3 if day_3 > 0 else 0
+    start_pol_pod = max(1, start_sup + kpi_sup_pol - 1) if (start_sup and kpi_sup_pol > 0) else 0
     start_pod_det = start_pol_pod + kpi_pol_pod if (start_pol_pod and kpi_pol_pod > 0) else 0
-    # El inicio de POD>PLANT debe ser justo cuando termina POD DETENTION
     start_pod_plant = start_pod_det + kpi_pod_det if (start_pod_det and kpi_pod_det > 0) else 0
 
-    # Línea nueva: customer leadtime
-    # CUSTOMER LEADTIME (CLT) = Final Day de 14. Rounding - Final Day de 1. Day Customer Order + 1
     try:
         final_day_14 = _final_day_for_step(13, row, df_vtt)
         final_day_1 = _final_day_for_step(0, row, df_vtt)
         customer_leadtime = final_day_14 - final_day_1 + 1
-        # st.write debug eliminado
-    except Exception as e:
-        st.write(f"[DEBUG] Error calculando Customer Leadtime: {e}")
+    except Exception:
         customer_leadtime = 0
-    # Transportation Duration = Final Day de 14. Rounding - Day de 5. Transport to POL + 1
+
     try:
         final_day_14 = _final_day_for_step(13, row, df_vtt)
-        # Obtener Day de 5. Transport to POL (columna '5.1 Transport ILN to POL')
         day_5 = _coerce_to_int(row['5.1 Transport ILN to POL']) if (row is not None and '5.1 Transport ILN to POL' in df_vtt.columns) else 0
         transportation_duration = final_day_14 - day_5 + 1
-        # st.write debug eliminado
-    except Exception as e:
-        st.write(f"[DEBUG] Error calculando Transportation Duration: {e}")
+    except Exception:
         transportation_duration = 0
-    # El inicio de 5. Transport to POL es igual a la fila 5 en la tabla de tiempo (índice 4)
-    # Usar el mismo start que esa fila para Transportation Duration
-    start_transport_to_pol = 0
-    try:
-        if row is not None:
-            dias_final_day_5 = int(row['5.3 Transport ILN to POL']) if '5.3 Transport ILN to POL' in df_vtt.columns else 0
-            day_plus_val_5 = _coerce_to_int(row['5.2 Transport ILN to POL']) if '5.2 Transport ILN to POL' in df_vtt.columns else 0
-            paint_len_5 = day_plus_val_5 if (day_plus_val_5 and day_plus_val_5 > 0) else 1
-            if dias_final_day_5 > 0:
-                start_transport_to_pol = max(1, dias_final_day_5 - paint_len_5 + 1)
-    except Exception:
-        start_transport_to_pol = 0
 
-    # El inicio de 1. Day Customer Order es igual a la fila 1 en la tabla de tiempo (índice 0)
-    start_day_customer_order = 0
-    try:
-        if row is not None:
-            dias_final_day_1 = int(row['1 Day Customer Order']) if '1 Day Customer Order' in df_vtt.columns else 0
-            day_plus_val_1 = 1  # No hay Day+ para el primer paso, se asume 1
-            paint_len_1 = day_plus_val_1
-            if dias_final_day_1 > 0:
-                start_day_customer_order = max(1, dias_final_day_1 - paint_len_1 + 1)
-    except Exception:
-        start_day_customer_order = 0
-
-    kpi_rows = [
-        ("CUSTOMER LEADTIME (CLT)", customer_leadtime, start_day_customer_order),
-        ("Transportation Duration", transportation_duration, start_transport_to_pol),
+    return [
+        ("CUSTOMER LEADTIME (CLT)", customer_leadtime, _step_start_index(0, row, df_vtt)),
+        ("Transportation Duration", transportation_duration, _step_start_index(4, row, df_vtt)),
         ("SUPPLIER>POL", kpi_sup_pol, start_sup),
-        # Para POL>POD, la duración es kpi_pol_pod (Transit time + Time for security)
         ("POL>POD", kpi_pol_pod, start_pol_pod),
         ("POD DETENTION", kpi_pod_det, start_pod_det),
         ("POD>PLANT", kpi_pod_plant, start_pod_plant),
     ]
+
+# Guardar HTML del VTT SUMMARY para reutilizarlo en la captura de imagen
+kpi_gantt_html = ""
+try:
+    kpi_rows = _build_kpi_rows(row, df_vtt)
 
     # Escala de días: usar la misma línea de tiempo que la zona superior
     max_days_kpi = len(timeline_days)
@@ -1628,6 +1570,89 @@ def _hex_to_fill(hex_color):
 
 def _compute_week_spans(days):
     spans = []
+
+
+    def _load_snapshot_font(size, bold=False):
+        candidates = []
+        if os.name == 'nt':
+            font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+            candidates.extend([
+                os.path.join(font_dir, 'arialbd.ttf' if bold else 'arial.ttf'),
+                os.path.join(font_dir, 'calibrib.ttf' if bold else 'calibri.ttf'),
+            ])
+        candidates.extend(['arialbd.ttf' if bold else 'arial.ttf', 'DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf'])
+        for candidate in candidates:
+            try:
+                return ImageFont.truetype(candidate, size)
+            except Exception:
+                continue
+        return ImageFont.load_default()
+
+
+    def _text_size(draw, text, font):
+        left, top, right, bottom = draw.textbbox((0, 0), str(text), font=font)
+        return right - left, bottom - top
+
+
+    def _draw_centered_text(draw, box, text, font, fill):
+        x1, y1, x2, y2 = box
+        text_w, text_h = _text_size(draw, text, font)
+        draw.text((x1 + max(0, (x2 - x1 - text_w) / 2), y1 + max(0, (y2 - y1 - text_h) / 2)), str(text), font=font, fill=fill)
+
+
+    def _draw_cell(draw, box, text='', *, fill='#ffffff', outline='#dddddd', font=None, text_fill='#111111', align='left'):
+        draw.rectangle(box, fill=fill, outline=outline, width=1)
+        if text == '':
+            return
+        x1, y1, x2, y2 = box
+        text = str(text)
+        font = font or _load_snapshot_font(12)
+        text_w, text_h = _text_size(draw, text, font)
+        if align == 'center':
+            tx = x1 + max(0, (x2 - x1 - text_w) / 2)
+        else:
+            tx = x1 + 6
+        ty = y1 + max(0, (y2 - y1 - text_h) / 2)
+        draw.text((tx, ty), text, font=font, fill=text_fill)
+
+
+    def _snapshot_info_pairs(row, df_vtt):
+        shipper_col = df_vtt.columns[10] if len(df_vtt.columns) > 10 else None
+        iln_col = df_vtt.columns[8] if len(df_vtt.columns) > 8 else None
+        commodity_col = 'Commodity' if 'Commodity' in df_vtt.columns else ('Comodity' if 'Comodity' in df_vtt.columns else None)
+
+        exp_value = ''
+        try:
+            if row is not None and 'Expiration Date' in df_vtt.columns:
+                raw_exp = row.get('Expiration Date', '')
+                if pd.notnull(raw_exp):
+                    if isinstance(raw_exp, (pd.Timestamp, datetime)):
+                        exp_value = raw_exp.strftime('%d/%m/%Y')
+                    else:
+                        exp_value = pd.to_datetime(raw_exp).strftime('%d/%m/%Y')
+        except Exception:
+            exp_value = str(row.get('Expiration Date', '')) if row is not None else ''
+
+        info_spec = [
+            ('ID-Cartography', 'ID'),
+            ('Carrier', 'Carrier'),
+            ('Shipper', shipper_col),
+            ('ILN/FF', iln_col),
+            ('PLANT', 'Name Destin Site'),
+            ('Commodity', commodity_col),
+        ]
+
+        pairs = []
+        for label, column in info_spec:
+            value = ''
+            try:
+                if row is not None and column and column in df_vtt.columns:
+                    value = row.get(column, '')
+            except Exception:
+                value = ''
+            pairs.append((label, '' if pd.isna(value) else str(value)))
+        pairs.append(('E/D', exp_value))
+        return pairs
     current_week = None
     count = 0
     for d in days:
@@ -1644,6 +1669,219 @@ def _compute_week_spans(days):
     if current_week is not None:
         spans.append((current_week, count))
     return spans
+
+
+def _load_snapshot_font(size, bold=False):
+    candidates = []
+    if os.name == 'nt':
+        font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+        candidates.extend([
+            os.path.join(font_dir, 'arialbd.ttf' if bold else 'arial.ttf'),
+            os.path.join(font_dir, 'calibrib.ttf' if bold else 'calibri.ttf'),
+        ])
+    candidates.extend(['arialbd.ttf' if bold else 'arial.ttf', 'DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf'])
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _text_size(draw, text, font):
+    left, top, right, bottom = draw.textbbox((0, 0), str(text), font=font)
+    return right - left, bottom - top
+
+
+def _draw_cell(draw, box, text='', *, fill='#ffffff', outline='#dddddd', font=None, text_fill='#111111', align='left'):
+    draw.rectangle(box, fill=fill, outline=outline, width=1)
+    if text == '':
+        return
+    x1, y1, x2, y2 = box
+    text = str(text)
+    font = font or _load_snapshot_font(12)
+    text_w, text_h = _text_size(draw, text, font)
+    if align == 'center':
+        tx = x1 + max(0, (x2 - x1 - text_w) / 2)
+    else:
+        tx = x1 + 6
+    ty = y1 + max(0, (y2 - y1 - text_h) / 2)
+    draw.text((tx, ty), text, font=font, fill=text_fill)
+
+
+def _snapshot_info_pairs(row, df_vtt):
+    shipper_col = df_vtt.columns[10] if len(df_vtt.columns) > 10 else None
+    iln_col = df_vtt.columns[8] if len(df_vtt.columns) > 8 else None
+    commodity_col = 'Commodity' if 'Commodity' in df_vtt.columns else ('Comodity' if 'Comodity' in df_vtt.columns else None)
+
+    exp_value = ''
+    try:
+        if row is not None and 'Expiration Date' in df_vtt.columns:
+            raw_exp = row.get('Expiration Date', '')
+            if pd.notnull(raw_exp):
+                if isinstance(raw_exp, (pd.Timestamp, datetime)):
+                    exp_value = raw_exp.strftime('%d/%m/%Y')
+                else:
+                    exp_value = pd.to_datetime(raw_exp).strftime('%d/%m/%Y')
+    except Exception:
+        exp_value = str(row.get('Expiration Date', '')) if row is not None else ''
+
+    info_spec = [
+        ('ID-Cartography', 'ID'),
+        ('Carrier', 'Carrier'),
+        ('Shipper', shipper_col),
+        ('ILN/FF', iln_col),
+        ('PLANT', 'Name Destin Site'),
+        ('Commodity', commodity_col),
+    ]
+
+    pairs = []
+    for label, column in info_spec:
+        value = ''
+        try:
+            if row is not None and column and column in df_vtt.columns:
+                value = row.get(column, '')
+        except Exception:
+            value = ''
+        pairs.append((label, '' if pd.isna(value) else str(value)))
+    pairs.append(('E/D', exp_value))
+    return pairs
+
+
+def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days):
+    margin = 24
+    title_h = 34
+    subtitle_h = 24
+    info_h = 24
+    section_gap = 18
+    week_h = 22
+    date_h = 22
+    row_h = 20
+    label_w = 250
+    metric_w = 64
+    final_w = 78
+    day_w = 18
+    fixed_widths = [label_w, metric_w, metric_w, final_w]
+    table_left = margin
+    grid_left = table_left + sum(fixed_widths)
+    total_width = margin * 2 + sum(fixed_widths) + day_w * len(timeline_days)
+    kpi_rows = _build_kpi_rows(row, df_vtt)
+    total_height = (
+        margin * 2 + title_h + subtitle_h + info_h * 3 + section_gap +
+        week_h + date_h + row_h * len(time_labels) + section_gap +
+        title_h + week_h + date_h + row_h * len(kpi_rows) +
+        section_gap + 40
+    )
+
+    image = PILImage.new('RGB', (max(total_width, 1200), total_height), '#ffffff')
+    draw = ImageDraw.Draw(image)
+    font_title = _load_snapshot_font(20, bold=True)
+    font_heading = _load_snapshot_font(14, bold=True)
+    font_bold = _load_snapshot_font(12, bold=True)
+    font_text = _load_snapshot_font(12)
+    font_small = _load_snapshot_font(10)
+
+    draw.text((margin, margin), 'VTT View', font=font_title, fill='#111111')
+    draw.text((margin, margin + title_h), f'POL: {selected_pol}   POD: {selected_pod}   Days to Show: {len(timeline_days)}', font=font_heading, fill='#222222')
+
+    info_y = margin + title_h + subtitle_h
+    info_pairs = _snapshot_info_pairs(row, df_vtt)
+    for index, (label, value) in enumerate(info_pairs):
+        col = index % 3
+        row_index = index // 3
+        x = margin + col * ((image.width - margin * 2) // 3)
+        y = info_y + row_index * info_h
+        draw.text((x, y), f'{label}:', font=font_bold, fill='#111111')
+        draw.text((x + 95, y), value, font=font_text, fill='#333333')
+
+    y = info_y + info_h * 3 + 8
+    week_spans = _compute_week_spans(timeline_days)
+    x = grid_left
+    for week, span in week_spans:
+        _draw_cell(draw, (x, y, x + span * day_w, y + week_h), f'W{week}', fill='#fffbe6', font=font_bold, align='center')
+        x += span * day_w
+    y += week_h
+
+    x = table_left
+    for width, header in zip(fixed_widths, headers):
+        _draw_cell(draw, (x, y, x + width, y + date_h), header, fill='#f5f5f5', font=font_bold, align='center' if header != 'Steps' else 'left')
+        x += width
+    for day in timeline_days:
+        fill = '#ffd6d6' if day.weekday() in (5, 6) else '#e3eafc'
+        _draw_cell(draw, (x, y, x + day_w, y + date_h), day.strftime('%d'), fill=fill, font=font_small, align='center')
+        x += day_w
+    y += date_h
+
+    for index, label in enumerate(time_labels):
+        x = table_left
+        _draw_cell(draw, (x, y, x + label_w, y + row_h), label, fill='#f5f5f5', font=font_bold)
+        x += label_w
+        _draw_cell(draw, (x, y, x + metric_w, y + row_h), _day_value_for_step(index, row, df_vtt), font=font_text, align='center')
+        x += metric_w
+        day_plus = _day_plus_for_step(index, row, df_vtt)
+        _draw_cell(draw, (x, y, x + metric_w, y + row_h), str(day_plus) if day_plus != 0 else '0', font=font_text, align='center')
+        x += metric_w
+        final_day = _final_day_for_step(index, row, df_vtt)
+        _draw_cell(draw, (x, y, x + final_w, y + row_h), str(final_day) if final_day else '-', font=font_text, align='center')
+        x += final_w
+
+        paint_len = day_plus if isinstance(day_plus, int) and day_plus > 0 else 1
+        if index in (0, 1, 5, 6, 7):
+            paint_len = 1
+        start_idx = max(1, final_day - paint_len + 1) if final_day else 0
+        for day_index, day in enumerate(timeline_days, start=1):
+            fill = '#ffd6d6' if day.weekday() in (5, 6) else '#ffffff'
+            if final_day and start_idx <= day_index <= final_day:
+                fill = '#4a90e2' if index == 8 else '#90ee90'
+            _draw_cell(draw, (x, y, x + day_w, y + row_h), fill=fill)
+            x += day_w
+        y += row_h
+
+    y += section_gap
+    draw.text((margin, y), 'VTT SUMMARY', font=font_title, fill='#111111')
+    y += title_h
+
+    x = grid_left
+    for week, span in week_spans:
+        _draw_cell(draw, (x, y, x + span * day_w, y + week_h), f'W{week}', fill='#fffbe6', font=font_bold, align='center')
+        x += span * day_w
+    y += week_h
+
+    x = table_left
+    for width in fixed_widths:
+        _draw_cell(draw, (x, y, x + width, y + date_h), fill='#ffffff')
+        x += width
+    for day in timeline_days:
+        fill = '#ffd6d6' if day.weekday() in (5, 6) else '#e3eafc'
+        _draw_cell(draw, (x, y, x + day_w, y + date_h), day.strftime('%a')[0].upper(), fill=fill, font=font_small, align='center')
+        x += day_w
+    y += date_h
+
+    for label, value, start_day in kpi_rows:
+        x = table_left
+        _draw_cell(draw, (x, y, x + label_w, y + row_h), label, fill='#f5f5f5', font=font_bold)
+        x += label_w
+        _draw_cell(draw, (x, y, x + metric_w, y + row_h), value if value else '-', font=font_text, align='center')
+        x += metric_w
+        _draw_cell(draw, (x, y, x + metric_w, y + row_h), fill='#ffffff')
+        x += metric_w
+        _draw_cell(draw, (x, y, x + final_w, y + row_h), fill='#ffffff')
+        x += final_w
+        end_day = start_day + value - 1 if value and start_day else 0
+        for day_index, _day in enumerate(timeline_days, start=1):
+            fill = '#ffffff'
+            if value and start_day and start_day <= day_index <= end_day:
+                fill = '#4a90e2' if label == 'POL>POD' else '#90ee90'
+            _draw_cell(draw, (x, y, x + day_w, y + row_h), fill=fill)
+            x += day_w
+        y += row_h
+
+    if row is not None and 'Safety stock' in df_vtt.columns:
+        y += section_gap
+        draw.text((margin, y), 'Customer Safety STOCK', font=font_heading, fill='#111111')
+        draw.text((margin + 220, y), str(row['Safety stock']), font=font_heading, fill='#222222')
+
+    return image
 
 def _get_value_safe(val):
     if pd.isna(val):
@@ -1714,35 +1952,7 @@ def _final_day_for_step(i, row, df_vtt):
         return 0
 
 def _day_plus_for_step(i, row, df_vtt):
-    if i in (0,1,5,6,7):
-        return 0
-    if i == 2:
-        return _coerce_to_int(row['3 .1 Time of Recept in ILN']) if row is not None and '3 .1 Time of Recept in ILN' in df_vtt.columns else 0
-    if i == 3:
-        return _coerce_to_int(row['4.2 Packaging préparation & loading']) if row is not None and '4.2 Packaging préparation & loading' in df_vtt.columns else 0
-    if i == 4:
-        return _coerce_to_int(row['5.2 Transport ILN to POL']) if row is not None and '5.2 Transport ILN to POL' in df_vtt.columns else 0
-    if i == 8:
-        return _coerce_to_int(row['Transit time']) if row is not None and 'Transit time' in df_vtt.columns else 0
-    if i == 9:
-        return _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
-    if i == 10:
-        return _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
-    if i == 11:
-        return _coerce_to_int(row['Cust.']) if row is not None and 'Cust.' in df_vtt.columns else 0
-    if i == 12:
-        return _coerce_to_int(row['Trpt POD/PFI vers Usine']) if row is not None and 'Trpt POD/PFI vers Usine' in df_vtt.columns else 0
-    if i == 13:
-        if row is not None and 'Round.' in df_vtt.columns:
-            return _coerce_to_int(row['Round.'])
-        if row is not None and 'Round' in df_vtt.columns:
-            return _coerce_to_int(row['Round'])
-        return 0
-    if i == 14:
-        return 7
-    if i == 15:
-        return 7
-    return 0
+    return _day_plus_value_for_step(i, row, df_vtt)
 
 def _day_value_for_step(i, row, df_vtt):
     # Returns the Day column value per step as string
@@ -1792,7 +2002,8 @@ def _day_value_for_step(i, row, df_vtt):
     except Exception:
         return '-'
 
-def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days):
+
+def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, include_snapshot_sheet=True):
     wb = Workbook()
     ws = wb.active
     ws.title = 'Timeline'
@@ -1934,103 +2145,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     ws.cell(row=rr, column=1, value='VTT SUMMARY').font = Font(bold=True, size=14)
     rr += 1
 
-    # Calcular duraciones de KPIs como en la UI
-    # CLT usa el valor de Final Day de 14. Rounding
-    kpi_clt = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    kpi_sup_pol = _coerce_to_int(row['Parts Vanning']) if (row is not None and 'Parts Vanning' in df_vtt.columns) else 0
-
-    total_tt_val = None
-    if row is not None:
-        t1 = pd.to_numeric(row.get('Transit time', None), errors='coerce') if 'Transit time' in df_vtt.columns else None
-        t2 = pd.to_numeric(row.get('Time for security', None), errors='coerce') if 'Time for security' in df_vtt.columns else None
-        parts = [v for v in (t1, t2) if v is not None and pd.notna(v)]
-        if parts:
-            total_tt_val = float(sum(parts))
-    kpi_pol_pod = _coerce_to_int(total_tt_val) if (total_tt_val is not None and not pd.isna(total_tt_val)) else 0
-
-    pod_det_val = None
-    try:
-        if row is not None:
-            customs_val = None
-            flex1_val = None
-            if '12 Customs Clearance' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
-            elif '12 Customs clearence' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs clearence'))
-            if '10 Days flexibility 1' in df_vtt.columns:
-                flex1_val = _coerce_to_int(row.get('10 Days flexibility 1'))
-            if customs_val and flex1_val:
-                pod_det_val = customs_val - flex1_val
-    except Exception:
-        pod_det_val = None
-    kpi_pod_det = _coerce_to_int(pod_det_val) if pod_det_val is not None else 0
-
-    pod_plant_val = None
-    try:
-        if row is not None:
-            customs_val = None
-            rounding_val = None
-            if '12 Customs Clearance' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs Clearance'))
-            elif '12 Customs clearence' in df_vtt.columns:
-                customs_val = _coerce_to_int(row.get('12 Customs clearence'))
-            if '14 Rounding' in df_vtt.columns:
-                rounding_val = _coerce_to_int(row.get('14 Rounding'))
-            if rounding_val and customs_val:
-                pod_plant_val = rounding_val - customs_val
-    except Exception:
-        pod_plant_val = None
-    kpi_pod_plant = _coerce_to_int(pod_plant_val) if pod_plant_val is not None else 0
-
-    # Calcular inicio real de la etapa 4 (Pack. prep. & load) para alinear SUPPLIER>POL
-    step4_start_idx = 0
-    try:
-        if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns:
-            dias_final_day_4 = int(row['4.3 Packaging préparation & loading'])
-            day_plus_val_4 = _coerce_to_int(row['4.2 Packaging préparation & loading']) if '4.2 Packaging préparation & loading' in df_vtt.columns else 0
-            paint_len_4 = day_plus_val_4 if (day_plus_val_4 and day_plus_val_4 > 0) else 1
-            if dias_final_day_4 > 0:
-                step4_start_idx = max(1, dias_final_day_4 - paint_len_4 + 1)
-    except Exception:
-        step4_start_idx = 0
-
-    # CLT debe iniciar desde la primera semana (primer día visible del timeline)
-    # Por eso fijamos su inicio en el día 1 de la escala
-    clt_start_idx = 1
-
-    # Definir inicios secuenciales como en el Gantt de la UI
-    start_clt = clt_start_idx if kpi_clt > 0 else 0
-    start_sup = step4_start_idx if (kpi_sup_pol > 0 and step4_start_idx > 0) else 0
-    offset = start_sup + kpi_sup_pol - 1 if (start_sup and kpi_sup_pol > 0) else 0
-    if row is not None and '9 ETD> ETA' in df_vtt.columns:
-        start_pol_pod = _coerce_to_int(row['9 ETD> ETA'])
-    elif row is not None and '9 ETD>ETA' in df_vtt.columns:
-        start_pol_pod = _coerce_to_int(row['9 ETD>ETA'])
-    else:
-        start_pol_pod = 0
-    offset += kpi_pol_pod if kpi_pol_pod > 0 else 0
-    start_pod_det = offset + 1 if kpi_pod_det > 0 else 0
-    offset += kpi_pod_det if kpi_pod_det > 0 else 0
-    start_pod_plant = offset + 1 if kpi_pod_plant > 0 else 0
-
-    # Línea nueva: customer leadtime
-    # CUSTOMER LEADTIME (CLT) = 14. Rounding
-    customer_leadtime = _coerce_to_int(row['14 Rounding']) if (row is not None and '14 Rounding' in df_vtt.columns) else 0
-    # Transportation Duration = Final Day de 14. Rounding - Final Day de 5. Transport to POL + 1
-    try:
-        final_day_14 = _final_day_for_step(13, row, df_vtt)
-        final_day_5 = _final_day_for_step(4, row, df_vtt)
-        transportation_duration = final_day_14 - final_day_5 + 1
-    except Exception:
-        transportation_duration = 0
-    kpi_rows = [
-        ("CUSTOMER LEADTIME (CLT)", customer_leadtime, start_clt),
-        ("Transportation Duration", transportation_duration, start_clt),
-        ("SUPPLIER>POL", kpi_sup_pol, start_sup),
-        ("POL>POD", kpi_pol_pod, start_pol_pod),
-        ("POD DETENTION", kpi_pod_det, start_pod_det),
-        ("POD>PLANT", kpi_pod_plant, start_pod_plant),
-    ]
+    kpi_rows = _build_kpi_rows(row, df_vtt)
 
     for label_txt, val, start_day in kpi_rows:
         ws.cell(row=rr, column=1, value=label_txt).font = bold
@@ -2062,6 +2177,30 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     ws.cell(row=rr, column=1, value='Customer Safety STOCK').font = bold
     if row is not None and 'Safety stock' in df_vtt.columns:
         ws.cell(row=rr, column=2, value=str(row['Safety stock']))
+
+    if include_snapshot_sheet:
+        # Snapshot sheet with the same timeline rendered as an embedded image.
+        snapshot_ws = wb.create_sheet('UI Snapshot')
+        snapshot_ws.sheet_view.showGridLines = False
+        try:
+            snapshot_image = _build_snapshot_image(
+                row=row,
+                df_vtt=df_vtt,
+                selected_pol=selected_pol,
+                selected_pod=selected_pod,
+                time_labels=time_labels,
+                headers=headers,
+                timeline_days=timeline_days,
+            )
+            image_buffer = BytesIO()
+            snapshot_image.save(image_buffer, format='PNG')
+            image_buffer.seek(0)
+            xl_image = XLImage(image_buffer)
+            xl_image._source_buffer = image_buffer
+            xl_image.anchor = 'A1'
+            snapshot_ws.add_image(xl_image)
+        except Exception:
+            snapshot_ws['A1'] = 'UI Snapshot could not be generated.'
 
     # Return bytes
     bio = BytesIO()
@@ -2112,6 +2251,7 @@ if st.button("Generate files", key="generate_files"):
         time_labels=time_labels,
         headers=headers,
         timeline_days=timeline_days,
+        include_snapshot_sheet=False,
     )
     excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
 
@@ -2134,19 +2274,21 @@ if st.button("Generate files", key="generate_files"):
 
     st.markdown(f"""
     <div style='width:100%; display:flex; justify-content:center; align-items:center; margin:32px 0;'>
-        <a id='excelBtn' href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{excel_b64}' download='{excel_file_name}' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;text-decoration:none;margin-right:24px;'>Excel file</a>
+        <button id='excelBtn' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;margin-right:24px;'>Excel file</button>
         <button id='imgBtn' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;'>Image</button>
     </div>
     """, unsafe_allow_html=True)
     components.html(
         """ 
         <script src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'></script>
+        <script src='https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js'></script>
         <script>
         (function(){
             function parentDoc(){
                 try { return window.parent && window.parent.document ? window.parent.document : document; } catch(e){ return document; }
             }
             function getBtn(){ return parentDoc().getElementById('imgBtn'); }
+            function getExcelBtn(){ return parentDoc().getElementById('excelBtn'); }
             function getArea(){
                 var d = parentDoc();
                 // Prefer off-screen composite that includes all data and KPIs
@@ -2160,34 +2302,85 @@ if st.button("Generate files", key="generate_files"):
                     setTimeout(waitLib, 100);
                 })();
             }
+            function ensureExcelJsReady(cb){
+                if (window.ExcelJS) return cb();
+                var tries = 0; (function waitLib(){
+                    if (window.ExcelJS) return cb();
+                    if (++tries > 50) { alert('ExcelJS no cargó.'); return; }
+                    setTimeout(waitLib, 100);
+                })();
+            }
+            function downloadBlob(blob, fileName){
+                var d = parentDoc();
+                var url = URL.createObjectURL(blob);
+                var a = d.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                d.body.appendChild(a);
+                a.click();
+                setTimeout(function(){ d.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+            }
+            function captureAreaCanvas(onSuccess){
+                ensureHtml2CanvasReady(function(){
+                    var area = getArea();
+                    if (!area) { alert('No se encontró el área visual para capturar.'); return; }
+                    window.html2canvas(area, { backgroundColor:'#fff', useCORS:true, allowTaint:true, scale:2 })
+                    .then(onSuccess)
+                    .catch(function(err){ alert('Error capturando imagen: ' + err); });
+                });
+            }
             function bind(){
-                var button = getBtn();
-                if (!button) { setTimeout(bind, 250); return; }
-                button.addEventListener('click', function(){
-                    ensureHtml2CanvasReady(function(){
-                        var area = getArea();
-                        if (!area) { alert('No se encontró el área visual para capturar.'); return; }
-                        window.html2canvas(area, { backgroundColor:'#fff', useCORS:true, allowTaint:true, scale:2 })
-                        .then(function(canvas){
-                            canvas.toBlob(function(blob){
-                                if(!blob){ alert('No se pudo generar la imagen'); return; }
-                                var d = parentDoc();
-                                var url = URL.createObjectURL(blob);
-                                var a = d.createElement('a');
-                                a.href = url;
-                                a.download = '__IMAGE_FILE_NAME__';
-                                d.body.appendChild(a);
-                                a.click();
-                                setTimeout(function(){ d.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-                            }, 'image/png', 0.95);
-                        })
-                        .catch(function(err){ alert('Error capturando imagen: ' + err); });
+                var imageButton = getBtn();
+                var excelButton = getExcelBtn();
+                if (!imageButton || !excelButton) { setTimeout(bind, 250); return; }
+                imageButton.addEventListener('click', function(){
+                    captureAreaCanvas(function(canvas){
+                        canvas.toBlob(function(blob){
+                            if(!blob){ alert('No se pudo generar la imagen'); return; }
+                            downloadBlob(blob, '__IMAGE_FILE_NAME__');
+                        }, 'image/png', 0.95);
+                    });
+                });
+                excelButton.addEventListener('click', function(){
+                    ensureExcelJsReady(function(){
+                        captureAreaCanvas(function(canvas){
+                            var workbook = new window.ExcelJS.Workbook();
+                            var baseWorkbookBytes = Uint8Array.from(atob('__EXCEL_B64__'), function(ch){
+                                return ch.charCodeAt(0);
+                            });
+                            workbook.xlsx.load(baseWorkbookBytes).then(function(){
+                                var existingSnapshot = workbook.getWorksheet('UI Snapshot');
+                                if (existingSnapshot) {
+                                    workbook.removeWorksheet(existingSnapshot.id);
+                                }
+                                var sheet = workbook.addWorksheet('UI Snapshot', { views: [{ showGridLines: false }] });
+                                sheet.properties.defaultRowHeight = 18;
+                                sheet.views = [{ showGridLines: false }];
+                                var imageId = workbook.addImage({
+                                    base64: canvas.toDataURL('image/png'),
+                                    extension: 'png'
+                                });
+                                sheet.addImage(imageId, {
+                                    tl: { col: 0, row: 0 },
+                                    ext: { width: canvas.width, height: canvas.height }
+                                });
+                                workbook.views = [{ activeTab: workbook.worksheets.length - 1 }];
+                                return workbook.xlsx.writeBuffer();
+                            }).then(function(buffer){
+                                var blob = new Blob([
+                                    buffer
+                                ], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                                downloadBlob(blob, '__EXCEL_FILE_NAME__');
+                            }).catch(function(err){
+                                alert('Error generando Excel: ' + err);
+                            });
+                        });
                     });
                 });
             }
             bind();
         })();
         </script>
-        """.replace('__IMAGE_FILE_NAME__', image_file_name),
+        """.replace('__IMAGE_FILE_NAME__', image_file_name).replace('__EXCEL_FILE_NAME__', excel_file_name).replace('__EXCEL_B64__', excel_b64),
         height=10,
     )

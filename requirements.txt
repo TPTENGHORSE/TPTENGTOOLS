@@ -2,6 +2,7 @@ streamlit
 plotly
 matplotlib
 openpyxl
+pillow
 pandas
 numpy
 py3dbp
