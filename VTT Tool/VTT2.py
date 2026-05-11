@@ -108,88 +108,129 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-col_info, col_timeline = st.columns([1, 4], gap="small")
+top_section = st.container()
 
-with col_info:
-    col_pol, col_pod = st.columns([1, 1], gap="medium")
-    pol_options = df_vtt['POL'].dropna().astype(str).unique().tolist() if 'POL' in df_vtt.columns else []
-    pod_options = df_vtt['POD'].dropna().astype(str).unique().tolist() if 'POD' in df_vtt.columns else []
+with top_section:
+    all_label = "Todos"
+
+    def _apply_cross_filters(dataframe, pol_value=all_label, pod_value=all_label, id_value=all_label):
+        result = dataframe
+        if 'POL' in result.columns and pol_value and pol_value != all_label:
+            result = result[result['POL'].astype(str) == str(pol_value)]
+        if 'POD' in result.columns and pod_value and pod_value != all_label:
+            result = result[result['POD'].astype(str) == str(pod_value)]
+        if 'ID' in result.columns and id_value and id_value != all_label:
+            result = result[result['ID'].astype(str) == str(id_value)]
+        return result
+
+    def _set_last_changed_filter(filter_name):
+        st.session_state['_last_changed_filter'] = filter_name
+
+    # Defaults in session state
     if 'pol_select' not in st.session_state:
-        st.session_state['pol_select'] = pol_options[0] if pol_options else ''
+        st.session_state['pol_select'] = all_label
     if 'pod_select' not in st.session_state:
-        st.session_state['pod_select'] = pod_options[0] if pod_options else ''
-    with col_pol:
-        st.markdown("<div style='font-size:28px; font-weight:700; line-height:1; margin:0 0 6px;'>POL</div>", unsafe_allow_html=True)
-        selected_pol = st.selectbox("POL", pol_options, key="pol_select", label_visibility="collapsed")
-    filtered_pod_options = (
-        df_vtt[df_vtt['POL'].astype(str) == st.session_state['pol_select']]['POD']
-        .dropna().astype(str).unique().tolist()
-        if 'POD' in df_vtt.columns else []
-    )
-    with col_pod:
-        st.markdown("<div style='font-size:28px; font-weight:700; line-height:1; margin:0 0 6px;'>POD</div>", unsafe_allow_html=True)
-        selected_pod = st.selectbox("POD", filtered_pod_options, key="pod_select", label_visibility="collapsed")
-    if selected_pod not in filtered_pod_options and filtered_pod_options:
-        st.session_state['pod_select'] = filtered_pod_options[0]
-    filtered_df = df_vtt[(df_vtt['POL'].astype(str) == st.session_state['pol_select']) & (df_vtt['POD'].astype(str) == st.session_state['pod_select'])]
-    if not filtered_df.empty:
-        if len(filtered_df) > 1:
-            def build_label(r):
-                parts = []
-                if 'ID' in r and pd.notnull(r['ID']):
-                    parts.append(f"ID-Cartography:{r['ID']}")
-                if 'Carrier' in r and pd.notnull(r['Carrier']):
-                    parts.append(f"Carrier:{r['Carrier']}")
-                if 'Name Destin Site' in r and pd.notnull(r['Name Destin Site']):
-                    parts.append(f"Plant:{r['Name Destin Site']}")
-                if 'Expiration Date' in r and pd.notnull(r['Expiration Date']):
-                    exp_val = r['Expiration Date']
-                    if isinstance(exp_val, (pd.Timestamp, datetime)):
-                        exp_str = exp_val.strftime('%d/%m/%Y')
-                    else:
-                        try:
-                            exp_str = pd.to_datetime(exp_val).strftime('%d/%m/%Y')
-                        except Exception:
-                            exp_str = str(exp_val)
-                    parts.append(f"Exp:{exp_str}")
-                return " | ".join(parts) if parts else str(r.name)
+        st.session_state['pod_select'] = all_label
+    if 'id_select' not in st.session_state:
+        st.session_state['id_select'] = all_label
+    if '_last_changed_filter' not in st.session_state:
+        st.session_state['_last_changed_filter'] = None
 
-            option_indices = list(filtered_df.index)
-            option_labels = [build_label(filtered_df.loc[idx]) for idx in option_indices]
-            if 'record_select' not in st.session_state or st.session_state['record_select'] not in option_indices:
-                st.session_state['record_select'] = option_indices[0]
-            selected_label = st.selectbox(
-                "Registro (varios coincidieron)",
-                options=option_indices,
-                format_func=lambda x: option_labels[option_indices.index(x)],
-                key='record_select'
-            )
-            row = filtered_df.loc[selected_label]
-        else:
-            row = filtered_df.iloc[0]
+    # POL stays global. POD cascades from POL. ID stays global so it never blocks later POL/POD changes.
+    all_pol_options = [all_label] + (df_vtt['POL'].dropna().astype(str).unique().tolist() if 'POL' in df_vtt.columns else [])
+    all_pod_options = [all_label] + (df_vtt['POD'].dropna().astype(str).unique().tolist() if 'POD' in df_vtt.columns else [])
+    all_id_options = [all_label] + (df_vtt['ID'].dropna().astype(str).unique().tolist() if 'ID' in df_vtt.columns else [])
+    pol_options = all_pol_options
+    id_options = all_id_options
+
+    selected_pol_value = st.session_state.get('pol_select', all_label)
+    selected_pod_value = st.session_state.get('pod_select', all_label)
+    selected_id_value = st.session_state.get('id_select', all_label)
+    last_changed_filter = st.session_state.get('_last_changed_filter')
+
+    if selected_pol_value != all_label and 'POL' in df_vtt.columns and 'POD' in df_vtt.columns:
+        pod_scope_df = df_vtt[df_vtt['POL'].astype(str) == str(selected_pol_value)]
+        pod_options = [all_label] + pod_scope_df['POD'].dropna().astype(str).unique().tolist()
+    else:
+        pod_options = all_pod_options
+
+    if last_changed_filter == 'id_select' and selected_id_value != all_label and 'ID' in df_vtt.columns:
+        id_scope_df = df_vtt[df_vtt['ID'].astype(str) == str(selected_id_value)]
+        pol_from_id = id_scope_df['POL'].dropna().astype(str).unique().tolist() if 'POL' in id_scope_df.columns else []
+        pod_from_id = id_scope_df['POD'].dropna().astype(str).unique().tolist() if 'POD' in id_scope_df.columns else []
+
+        if len(pol_from_id) == 1:
+            st.session_state['pol_select'] = pol_from_id[0]
+        elif pol_from_id and st.session_state.get('pol_select', all_label) not in pol_from_id:
+            st.session_state['pol_select'] = pol_from_id[0]
+
+        if len(pod_from_id) == 1:
+            st.session_state['pod_select'] = pod_from_id[0]
+        elif pod_from_id and st.session_state.get('pod_select', all_label) not in pod_from_id:
+            st.session_state['pod_select'] = pod_from_id[0]
+
+    elif (
+        last_changed_filter in ('pol_select', 'pod_select')
+        and st.session_state.get('pol_select', all_label) != all_label
+        and st.session_state.get('pod_select', all_label) != all_label
+        and 'POL' in df_vtt.columns
+        and 'POD' in df_vtt.columns
+        and 'ID' in df_vtt.columns
+    ):
+        pol_pod_scope_df = df_vtt[
+            (df_vtt['POL'].astype(str) == str(st.session_state.get('pol_select', all_label)))
+            & (df_vtt['POD'].astype(str) == str(st.session_state.get('pod_select', all_label)))
+        ]
+        id_from_pol_pod = pol_pod_scope_df['ID'].dropna().astype(str).unique().tolist()
+        current_id_value = st.session_state.get('id_select', all_label)
+        if len(id_from_pol_pod) == 1:
+            st.session_state['id_select'] = id_from_pol_pod[0]
+        elif id_from_pol_pod and current_id_value not in id_from_pol_pod:
+            st.session_state['id_select'] = id_from_pol_pod[0]
+        elif not id_from_pol_pod:
+            st.session_state['id_select'] = all_label
+
+    # Keep current values valid
+    if st.session_state.get('pol_select', all_label) not in pol_options:
+        st.session_state['pol_select'] = all_label
+    if st.session_state.get('pod_select', all_label) not in pod_options:
+        st.session_state['pod_select'] = all_label
+    if st.session_state.get('id_select', all_label) not in id_options:
+        st.session_state['id_select'] = all_label
+
+    # Render the full top row in a single aligned layout.
+    top_cols = st.columns([0.9, 0.9, 1.35, 1.55, 1.55, 1.4, 1.4], gap="medium")
+    compact_label_style = "font-size:13px; font-weight:700; line-height:1; margin:0 0 8px;"
+
+    with top_cols[0]:
+        st.markdown(f"<div style='{compact_label_style}'>POL</div>", unsafe_allow_html=True)
+        st.selectbox("POL", pol_options, key="pol_select", label_visibility="collapsed", on_change=_set_last_changed_filter, args=('pol_select',))
+    with top_cols[1]:
+        st.markdown(f"<div style='{compact_label_style}'>POD</div>", unsafe_allow_html=True)
+        st.selectbox("POD", pod_options, key="pod_select", label_visibility="collapsed", on_change=_set_last_changed_filter, args=('pod_select',))
+    with top_cols[2]:
+        st.markdown(f"<div style='{compact_label_style}'>ID</div>", unsafe_allow_html=True)
+        st.selectbox("ID", id_options, key="id_select", label_visibility="collapsed", on_change=_set_last_changed_filter, args=('id_select',))
+
+    # Final filtered dataset from active bidirectional selections
+    filtered_df = _apply_cross_filters(
+        df_vtt,
+        pol_value=st.session_state.get('pol_select', all_label),
+        pod_value=st.session_state.get('pod_select', all_label),
+        id_value=st.session_state.get('id_select', all_label),
+    )
+
+    if not filtered_df.empty:
+        row = filtered_df.iloc[0]
     else:
         row = None
 
-safety_stock_val = None
-if row is not None and 'Safety stock' in df_vtt.columns:
-    safety_stock_val = row['Safety stock']
-
-st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
-
-with col_timeline:
-    st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
-    info_cols = st.columns([1.0, 1.2, 1.2, 1.0, 1.0], gap="medium")
-    with info_cols[0]:
-        if row is not None and 'ID' in df_vtt.columns:
-            st.markdown(render_box('ID-Cartography', row['ID']), unsafe_allow_html=True)
-        else:
-            st.info("No existe la columna ID-Cartography (ID) o no hay coincidencia.")
-    with info_cols[1]:
+    with top_cols[3]:
         if row is not None and 'Carrier' in df_vtt.columns:
             st.markdown(render_box('Carrier', row['Carrier']), unsafe_allow_html=True)
         else:
             st.info("No existe la columna Carrier (Carrier) o no hay coincidencia.")
-    with info_cols[2]:
+    with top_cols[4]:
         if row is not None and len(df_vtt.columns) > 10:
             try:
                 col_k = df_vtt.columns[10]
@@ -198,7 +239,7 @@ with col_timeline:
                 st.info("No se pudo leer la columna K (Shipper) o no hay coincidencia.")
         else:
             st.info("No se pudo leer la columna K (Shipper) o no hay coincidencia.")
-    with info_cols[3]:
+    with top_cols[5]:
         if row is not None and len(df_vtt.columns) > 8:
             try:
                 col_i = df_vtt.columns[8]
@@ -207,11 +248,19 @@ with col_timeline:
                 st.info("No se pudo leer la columna I (ILN/FF) o no hay coincidencia.")
         else:
             st.info("No se pudo leer la columna I (ILN/FF) o no hay coincidencia.")
-    with info_cols[4]:
+    with top_cols[6]:
         if row is not None and 'Name Destin Site' in df_vtt.columns:
             st.markdown(render_box('PLANT', row['Name Destin Site']), unsafe_allow_html=True)
         else:
             st.info("No existe la columna Name Destin Site o no hay coincidencia.")
+
+safety_stock_val = None
+if row is not None and 'Safety stock' in df_vtt.columns:
+    safety_stock_val = row['Safety stock']
+
+st.markdown("<hr style='margin:16px 0;'>", unsafe_allow_html=True)
+
+st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
 
 time_cols_fixed = 4
 today = datetime.today()
@@ -225,14 +274,18 @@ headers = ["Steps", "Day", "Day+", "Final Day"]
 table_html = """
 <table class='timeline-table' style='width:100%; border-collapse:collapse; margin-top:8px;'>
     <thead>"""
+table_html_visible = table_html
 # Fila de semana combinada
 table_html += "<tr>"
+table_html_visible += "<tr>"
 for idx_h, h in enumerate(headers):
     if idx_h == 0:
         # Steps column: wider and no wrapping
         table_html += "<th style='border:none; background:none; min-width:80px; white-space:nowrap;'></th>"
+        table_html_visible += "<th style='border:none; background:none; min-width:80px; white-space:nowrap;'></th>"
     else:
         table_html += "<th style='border:none; background:none'></th>"
+        table_html_visible += "<th style='border:none; background:none'></th>"
 # Agrupar días por semana
 semana_actual = None
 colspan = 0
@@ -245,20 +298,28 @@ for idx, day in enumerate(timeline_days):
         colspan += 1
     else:
         # Imprimir celda combinada para la semana anterior
-        table_html += f"<th colspan='{colspan}' style='padding:0 1px; border:1px solid #eee; min-width:28px; text-align:center; background:#fffbe6; font-size:13.5px; font-weight:bold;'>W{semana_actual}</th>"
+        week_header = f"<th colspan='{colspan}' style='padding:0 1px; border:1px solid #eee; min-width:28px; text-align:center; background:#fffbe6; font-size:13.5px; font-weight:bold;'>W{semana_actual}</th>"
+        table_html += week_header
+        table_html_visible += week_header
         semana_actual = semana
         colspan = 1
 # Imprimir la última semana
 if semana_actual is not None:
-    table_html += f"<th colspan='{colspan}' style='padding:0 1px; border:1px solid #eee; min-width:28px; text-align:center; background:#fffbe6; font-size:13.5px; font-weight:bold;'>W{semana_actual}</th>"
+    week_header = f"<th colspan='{colspan}' style='padding:0 1px; border:1px solid #eee; min-width:28px; text-align:center; background:#fffbe6; font-size:13.5px; font-weight:bold;'>W{semana_actual}</th>"
+    table_html += week_header
+    table_html_visible += week_header
 table_html += "</tr>"
+table_html_visible += "</tr>"
 # Fila de encabezados de fechas
 table_html += "<tr>"
+table_html_visible += "<tr>"
 for idx_h, h in enumerate(headers):
     if idx_h == 0:
-        table_html += f"<th style='padding:5px 7px; border:1px solid #eee; min-width:200px; text-align:center; background:#f5f5f5; white-space:nowrap'>{h}</th>"
+        fixed_header = f"<th style='padding:5px 7px; border:1px solid #eee; min-width:200px; text-align:center; background:#f5f5f5; white-space:nowrap'>{h}</th>"
     else:
-        table_html += f"<th style='padding:5px 7px; border:1px solid #eee; min-width:50px; width:50px; text-align:center; background:#f5f5f5'>{h}</th>"
+        fixed_header = f"<th style='padding:5px 7px; border:1px solid #eee; min-width:50px; width:50px; text-align:center; background:#f5f5f5'>{h}</th>"
+    table_html += fixed_header
+    table_html_visible += fixed_header
 for idx, day in enumerate(timeline_days):
     # Colorear sábados y domingos
     if day.weekday() in [5, 6]:
@@ -268,8 +329,11 @@ for idx, day in enumerate(timeline_days):
     # Mostrar solo la letra inicial del día en mayúscula
     vertical_label = day.strftime('%a')[0].upper()  # M, T, W, etc.
     # Centrar verticalmente la letra inicial
-    table_html += f"<th style='{th_style}'><span class='vtt-vertical-text' style='display:flex;align-items:center;justify-content:center;height:100%;'>{vertical_label}</span></th>"
+    day_header = f"<th style='{th_style}'><span class='vtt-vertical-text' style='display:flex;align-items:center;justify-content:center;height:100%;'>{vertical_label}</span></th>"
+    table_html += day_header
+    table_html_visible += day_header
 table_html += "</tr></thead><tbody>"
+table_html_visible += "</tr></thead><tbody>"
 
 # Etiquetas de filas
 time_labels = [
@@ -282,48 +346,57 @@ time_labels = [
     "7. Cut off",
     "8. ETD",
     "9. Transit Duration (ETD>ETA)",
-    "10. Days flexibility 1",
-    "11. Days flexibility 2",
-    "12. Customs clearence",
-    "13. Transport to plant",
-    "14. Rounding",
-    "15. Due Date"
+    "10. Days of flexibility",
+    "11. Customs clearence",
+    "12. Transport to plant",
+    "13. Rounding",
+    "14. Due Date"
 ]
 
 time_rows = len(time_labels)
 for i in range(time_rows):
+    source_step = i if i < 10 else i + 1
     # Reduce row height ~35% (15px -> ~10px)
     table_html += "<tr style='height:15px;'>"
+    table_html_visible += "<tr style='height:15px;'>"
     for j in range(time_cols):
         cell_content = ""
+        cell_content_visible = ""
         # Alinear la primera columna (etiquetas) a la izquierda
         if j == 0:
             # Steps column: make it wider and prevent wrapping
             cell_style = "padding:4px 6px; border:1px solid #eee; text-align:left; font-weight:bold; background:#f5f5f5; min-width:200px; white-space:nowrap;"
         else:
             cell_style = "padding:4px 6px; border:1px solid #eee; text-align:center;"
+        cell_style_visible = cell_style
         # Compactar altura y padding en todas las celdas de steps (≈ -35%)
         cell_style += "height:15px; line-height:15px; padding:1px 4px;"
+        cell_style_visible += "height:15px; line-height:15px; padding:1px 4px;"
         # Colorear sábados y domingos en las celdas de fechas
         if j >= 4:
             fecha_actual = timeline_days[j-4] if (j-4) < len(timeline_days) else None
             if fecha_actual is not None and fecha_actual.weekday() in [5, 6]:
                 cell_style += "background-color:#ffd6d6;"
+                cell_style_visible += "background-color:#ffd6d6;"
         if i == 0:  # 1. Day Customer Order
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '1 Day Customer Order' in df_vtt.columns:
                     cell_content = row['1 Day Customer Order']
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 cell_content = "0"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '1 Day Customer Order' in df_vtt.columns:
                     cell_content = row['1 Day Customer Order']
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['1 Day Customer Order']) if row is not None and '1 Day Customer Order' in df_vtt.columns else 0
@@ -334,9 +407,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 1:  # 2. Day ILN Order
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '2 Day ILN Order' in df_vtt.columns:
                     val = row['2 Day ILN Order']
@@ -348,8 +424,10 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 cell_content = "0"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '2 Day ILN Order' in df_vtt.columns:
                     val = row['2 Day ILN Order']
@@ -361,6 +439,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['2 Day ILN Order']) if row is not None and '2 Day ILN Order' in df_vtt.columns else 0
@@ -371,9 +450,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 2:  # 3. First Receipt Days
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '3 First Receipt Days' in df_vtt.columns:
                     val = row['3 First Receipt Days']
@@ -385,6 +467,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "No hay datos para la combinación POL/POD seleccionada"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and '3 .1 Time of Recept in ILN' in df_vtt.columns:
                     val = row['3 .1 Time of Recept in ILN']
@@ -396,6 +479,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '3.2 First Receipt Days' in df_vtt.columns:
                     val = row['3.2 First Receipt Days']
@@ -407,6 +491,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['3.2 First Receipt Days']) if row is not None and '3.2 First Receipt Days' in df_vtt.columns else 0
@@ -418,9 +503,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 4:  # 5. Transport ILN to POL
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '5.1 Transport ILN to POL' in df_vtt.columns:
                     val = row['5.1 Transport ILN to POL']
@@ -432,6 +520,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and '5.2 Transport ILN to POL' in df_vtt.columns:
                     val = row['5.2 Transport ILN to POL']
@@ -443,6 +532,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '5.3 Transport ILN to POL' in df_vtt.columns:
                     val = row['5.3 Transport ILN to POL']
@@ -454,6 +544,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['5.3 Transport ILN to POL']) if row is not None and '5.3 Transport ILN to POL' in df_vtt.columns else 0
@@ -465,9 +556,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 5:  # 6. First Day to POL
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '6 First Day to POL' in df_vtt.columns:
                     val = row['6 First Day to POL']
@@ -479,6 +573,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and 'First Day to POL' in df_vtt.columns:
                     val = row['First Day to POL']
@@ -490,6 +585,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "0"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '6 First Day to POL' in df_vtt.columns:
                     val = row['6 First Day to POL']
@@ -501,6 +597,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['6 First Day to POL']) if row is not None and '6 First Day to POL' in df_vtt.columns else 0
@@ -512,9 +609,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 6:  # 7. Cut off
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '7 Cutt off' in df_vtt.columns:
                     val = row['7 Cutt off']
@@ -526,8 +626,10 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 cell_content = "0"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '7 Cutt off' in df_vtt.columns:
                     val = row['7 Cutt off']
@@ -539,6 +641,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['7 Cutt off']) if row is not None and '7 Cutt off' in df_vtt.columns else 0
@@ -549,9 +652,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 7:  # 8. ETD
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '8 ETD' in df_vtt.columns:
                     val = row['8 ETD']
@@ -563,8 +669,10 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 cell_content = "0"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '8 ETD' in df_vtt.columns:
                     val = row['8 ETD']
@@ -576,6 +684,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['8 ETD']) if row is not None and '8 ETD' in df_vtt.columns else 0
@@ -586,9 +695,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 8:  # 9. TT (ETD> ETA)
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '8 ETD' in df_vtt.columns:
                     val = row['8 ETD']
@@ -600,6 +712,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and 'Transit time' in df_vtt.columns:
                     val = row['Transit time']
@@ -611,6 +724,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 final_col = None
                 if row is not None:
@@ -628,6 +742,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 dias_final_day = 0
                 try:
@@ -644,9 +759,12 @@ for i in range(time_rows):
                     cell_content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>🚢</span>"
                     # Azul más claro para Transit Duration (ETD>ETA)
                     cell_style += "background-color:#4a90e2;"
-        elif i == 9:  # 10. Days flexibility 1
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
+        elif i == 9:  # 10. Days of flexibility
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:  # Day = Final day of step 9 + 1
                 # Base: '9 ETD> ETA' o '9 ETD>ETA'
                 base_val = None
@@ -674,94 +792,15 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
-            elif j == 2:  # Day+
-                if row is not None and 'Time for security' in df_vtt.columns:
-                    val = row['Time for security']
-                    if pd.isna(val):
-                        cell_content = "-"
-                    elif val == 0:
-                        cell_content = "0"
-                    else:
-                        cell_content = str(val)
+                cell_content_visible = cell_content
+            elif j == 2:  # Day+ = Time for security + Time for security2 buffer
+                if row is not None and ('Time for security' in df_vtt.columns or 'Time for security2 buffer' in df_vtt.columns):
+                    flex_1 = _coerce_to_int(row['Time for security']) if 'Time for security' in df_vtt.columns else 0
+                    flex_2 = _coerce_to_int(row['Time for security2 buffer']) if 'Time for security2 buffer' in df_vtt.columns else 0
+                    cell_content = str(flex_1 + flex_2)
                 else:
                     cell_content = "-"
-            elif j == 3:  # Final Day
-                # Usar columna '10 Days flexibility 1' si existe; si no, derivar Day + Day+
-                if row is not None and '10 Days flexibility 1' in df_vtt.columns:
-                    val = row['10 Days flexibility 1']
-                    if pd.isna(val):
-                        cell_content = "-"
-                    elif val == 0:
-                        cell_content = "0"
-                    else:
-                        cell_content = str(val)
-                else:
-                    # derivado
-                    cell_content = "-"
-                    try:
-                        # compute from base (9 ETD>ETA) + 1 + buffer
-                        base = None
-                        if row is not None and '9 ETD> ETA' in df_vtt.columns:
-                            base = row['9 ETD> ETA']
-                        elif row is not None and '9 ETD>ETA' in df_vtt.columns:
-                            base = row['9 ETD>ETA']
-                        bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
-                        if pd.isna(bnum):
-                            # FIX: regex string was split across lines, causing unterminated string literal error
-                            m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
-                            bnum = float(m[0]) if m else float('nan')
-                        plus = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
-                        if not pd.isna(bnum):
-                            cell_content = str(int(float(bnum)) + 1 + int(plus))
-                    except Exception:
-                        cell_content = "-"
-            elif j >= 4:
-                # pintar últimos Day+ días hasta el Final Day
-                try:
-                    dias_final_day = 0
-                    if row is not None and '10 Days flexibility 1' in df_vtt.columns:
-                        dias_final_day = int(row['10 Days flexibility 1'])
-                except Exception:
-                    dias_final_day = 0
-                day_plus_val = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
-                paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
-                start_idx = max(1, dias_final_day - paint_len + 1)
-                if start_idx <= (j-3) <= dias_final_day:
-                    cell_content = ""
-                    cell_style += "background-color:#90ee90;"
-        elif i == 10:  # 11. Days flexibility 2
-            if j == 0:
-                cell_content = time_labels[i]
-            elif j == 1:  # Day = Final day of step 10 + 1
-                if row is not None and '10 Days flexibility 1' in df_vtt.columns:
-                    base_val = row['10 Days flexibility 1']
-                    num_val = pd.to_numeric(base_val, errors='coerce')
-                    if pd.isna(num_val):
-                        try:
-                            matches = re.findall(r"[-+]?\d*\.?\d+", str(base_val))
-                            num_val = float(matches[0]) if matches else float('nan')
-                        except Exception:
-                            num_val = float('nan')
-                    if pd.isna(num_val):
-                        cell_content = "-"
-                    else:
-                        try:
-                            cell_content = str(int(float(num_val)) + 1)
-                        except Exception:
-                            cell_content = "-"
-                else:
-                    cell_content = "-"
-            elif j == 2:  # Day+ usa Time for security2 buffer
-                if row is not None and 'Time for security2 buffer' in df_vtt.columns:
-                    val = row['Time for security2 buffer']
-                    if pd.isna(val):
-                        cell_content = "-"
-                    elif val == 0:
-                        cell_content = "0"
-                    else:
-                        cell_content = str(val)
-                else:
-                    cell_content = "0"
+                cell_content_visible = cell_content
             elif j == 3:  # Final Day
                 if row is not None and '11 Days flexibility 2' in df_vtt.columns:
                     val = row['11 Days flexibility 2']
@@ -773,21 +812,52 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                    try:
+                        base = row['10 Days flexibility 1'] if row is not None and '10 Days flexibility 1' in df_vtt.columns else None
+                        bnum = pd.to_numeric(base, errors='coerce') if base is not None else float('nan')
+                        if pd.isna(bnum):
+                            m = re.findall(r"[-+]?\.?\d+", str(base)) if base is not None else []
+                            bnum = float(m[0]) if m else float('nan')
+                        plus = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+                        if not pd.isna(bnum):
+                            cell_content = str(int(float(bnum)) + 1 + int(plus))
+                    except Exception:
+                        cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
-                    dias_final_day = int(row['11 Days flexibility 2']) if row is not None and '11 Days flexibility 2' in df_vtt.columns else 0
+                    dias_final_day = 0
+                    if row is not None and '11 Days flexibility 2' in df_vtt.columns:
+                        dias_final_day = int(row['11 Days flexibility 2'])
+                    elif row is not None and '10 Days flexibility 1' in df_vtt.columns:
+                        base_final = pd.to_numeric(row['10 Days flexibility 1'], errors='coerce')
+                        if pd.isna(base_final):
+                            matches = re.findall(r"[-+]?\d*\.?\d+", str(row['10 Days flexibility 1']))
+                            base_final = float(matches[0]) if matches else float('nan')
+                        plus_2 = _coerce_to_int(row['Time for security2 buffer']) if 'Time for security2 buffer' in df_vtt.columns else 0
+                        if not pd.isna(base_final):
+                            dias_final_day = int(float(base_final)) + 1 + int(plus_2)
                 except Exception:
                     dias_final_day = 0
-                # Pintado basado en Time for security2 buffer
-                day_plus_val = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+                flex_1 = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
+                flex_2 = _coerce_to_int(row['Time for security2 buffer']) if row is not None and 'Time for security2 buffer' in df_vtt.columns else 0
+                day_plus_val = flex_1 + flex_2
                 paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
-        elif i == 11:  # 12. Customs clearence
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
+
+                if start_idx <= (j-3) <= dias_final_day and flex_1 > 0:
+                    time_for_security_end = start_idx + flex_1 - 1
+                    if start_idx <= (j-3) <= time_for_security_end:
+                        cell_style_visible = cell_style_visible.replace("background-color:#90ee90;", "background-color:#87ceeb;")
+        elif source_step == 11:  # 11. Customs clearence
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '11 Days flexibility 2' in df_vtt.columns:
                     base_val = row['11 Days flexibility 2']
@@ -807,6 +877,7 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and 'Cust.' in df_vtt.columns:
                     val = row['Cust.']
@@ -818,6 +889,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 final_col = None
                 if row is not None:
@@ -835,6 +907,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 dias_final_day = 0
                 try:
@@ -850,9 +923,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
-        elif i == 12:  # 13. Transport to plant
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
+        elif source_step == 12:  # 12. Transport to plant
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 base_val = None
                 if row is not None:
@@ -877,6 +953,7 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and 'Trpt POD/PFI vers Usine' in df_vtt.columns:
                     val = row['Trpt POD/PFI vers Usine']
@@ -888,6 +965,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '13 Transport to Plant' in df_vtt.columns:
                     val = row['13 Transport to Plant']
@@ -899,6 +977,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['13 Transport to Plant']) if row is not None and '13 Transport to Plant' in df_vtt.columns else 0
@@ -910,9 +989,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
-        elif i == 13:  # 14. Rounding
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
+        elif source_step == 13:  # 13. Rounding
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '13 Transport to Plant' in df_vtt.columns:
                     base_val = row['13 Transport to Plant']
@@ -932,6 +1014,7 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 val = None
                 if row is not None:
@@ -948,6 +1031,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '14 Rounding' in df_vtt.columns:
                     val = row['14 Rounding']
@@ -959,6 +1043,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['14 Rounding']) if row is not None and '14 Rounding' in df_vtt.columns else 0
@@ -976,9 +1061,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
-        elif i == 14:  # 15. Due Date
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
+        elif source_step == 14:  # 14. Due Date
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '14 Rounding' in df_vtt.columns:
                     base_val = row['14 Rounding']
@@ -998,8 +1086,10 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 cell_content = str(_due_date_day_plus_value(row, df_vtt))
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '15 Due Date' in df_vtt.columns:
                     val = row['15 Due Date']
@@ -1011,6 +1101,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['15 Due Date']) if row is not None and '15 Due Date' in df_vtt.columns else 0
@@ -1022,9 +1113,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 15:  # 16. Manufacturing
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '15 Due Date' in df_vtt.columns:
                     base_val = row['15 Due Date']
@@ -1044,8 +1138,10 @@ for i in range(time_rows):
                             cell_content = "-"
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 cell_content = "7"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '16 Manufacturing' in df_vtt.columns:
                     val = row['16 Manufacturing']
@@ -1057,6 +1153,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['16 Manufacturing']) if row is not None and '16 Manufacturing' in df_vtt.columns else 0
@@ -1068,9 +1165,12 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         elif i == 3:  # 4. Pack. prep. & load
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             elif j == 1:
                 if row is not None and '4.1 Packaging préparation & loading' in df_vtt.columns:
                     val = row['4.1 Packaging préparation & loading']
@@ -1082,6 +1182,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 2:
                 if row is not None and '4.2 Packaging préparation & loading' in df_vtt.columns:
                     val = row['4.2 Packaging préparation & loading']
@@ -1093,6 +1194,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j == 3:
                 if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns:
                     val = row['4.3 Packaging préparation & loading']
@@ -1104,6 +1206,7 @@ for i in range(time_rows):
                         cell_content = str(val)
                 else:
                     cell_content = "-"
+                cell_content_visible = cell_content
             elif j >= 4:
                 try:
                     dias_final_day = int(row['4.3 Packaging préparation & loading']) if row is not None and '4.3 Packaging préparation & loading' in df_vtt.columns else 0
@@ -1115,17 +1218,24 @@ for i in range(time_rows):
                 if start_idx <= (j-3) <= dias_final_day:
                     cell_content = ""
                     cell_style += "background-color:#90ee90;"
+                cell_content_visible = cell_content
+                cell_style_visible = cell_style
         else:
             if j == 0:
                 cell_content = time_labels[i]
+                cell_content_visible = cell_content
             else:
                 cell_content = ""
+                cell_content_visible = cell_content
         table_html += f"<td style='{cell_style}'>{cell_content}</td>"
+        table_html_visible += f"<td style='{cell_style_visible}'>{cell_content_visible}</td>"
     table_html += "</tr>"
+    table_html_visible += "</tr>"
 
 table_html += "</tbody></table>"
+table_html_visible += "</tbody></table>"
 # Render visible table as before, but with a distinct id to avoid capture conflicts
-wrapped_html_visible = f"<div id='timeline_capture_table' style='display:inline-block'>{table_html}</div>"
+wrapped_html_visible = f"<div id='timeline_capture_table' style='display:inline-block'>{table_html_visible}</div>"
 st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 
 
@@ -1362,6 +1472,7 @@ def _build_kpi_rows(row, df_vtt):
 
     return [
         ("CUSTOMER LEADTIME (CLT)", customer_leadtime, _step_start_index(0, row, df_vtt)),
+        ("OVS SAP STAGES", None, None),
         ("Transportation Duration", transportation_duration, _step_start_index(4, row, df_vtt)),
         ("SUPPLIER>POL", kpi_sup_pol, start_sup),
         ("POL>POD", kpi_pol_pod, start_pol_pod),
@@ -1418,7 +1529,18 @@ try:
             kpi_gantt_html += f"<th style='{th_style}'><span class='vtt-vertical-text' style='display:flex;align-items:center;justify-content:center;height:100%;'>{label_day}</span></th>"
         kpi_gantt_html += "</tr></thead><tbody>"
 
+        total_kpi_columns = 4 + len(timeline_days)
+
         for label_txt, val, start_day in kpi_rows:
+            if val is None and start_day is None:
+                kpi_gantt_html += (
+                    "<tr>"
+                    f"<td colspan='{total_kpi_columns}' style='padding:6px 4px 6px 2cm; border:1px solid #eee; text-align:left; font-weight:bold; background:#ffffff; min-width:200px; white-space:nowrap; font-size:18px;'>"
+                    f"{label_txt}</td>"
+                    "</tr>"
+                )
+                continue
+
             kpi_gantt_html += "<tr>"
             # Etiqueta KPI (columna Steps)
             kpi_gantt_html += (
@@ -1532,7 +1654,7 @@ if row is not None:
         _commodity_val = ''
 
 composite_html += "<div style='display:grid; grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; gap:6px 12px; align-items:center; margin:6px 0 10px 0;'>"
-composite_html += f"<div style='font-weight:bold;'>ID-Cartography:</div><div>{_id_val}</div>"
+composite_html += f"<div style='font-weight:bold;'>ID:</div><div>{_id_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>Carrier:</div><div>{_carrier_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>Shipper:</div><div>{_shipper_val}</div>"
 composite_html += f"<div style='font-weight:bold;'>ILN/FF:</div><div>{_iln_val}</div>"
@@ -1662,7 +1784,7 @@ def _compute_week_spans(days):
             exp_value = str(row.get('Expiration Date', '')) if row is not None else ''
 
         info_spec = [
-            ('ID-Cartography', 'ID'),
+            ('ID', 'ID'),
             ('Carrier', 'Carrier'),
             ('Shipper', shipper_col),
             ('ILN/FF', iln_col),
@@ -1755,7 +1877,7 @@ def _snapshot_info_pairs(row, df_vtt):
         exp_value = str(row.get('Expiration Date', '')) if row is not None else ''
 
     info_spec = [
-        ('ID-Cartography', 'ID'),
+        ('ID', 'ID'),
         ('Carrier', 'Carrier'),
         ('Shipper', shipper_col),
         ('ILN/FF', iln_col),
@@ -2062,7 +2184,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
             commodity_col = 'Comodity'
 
         for label, colname in [
-            ('ID-Cartography','ID'),
+            ('ID','ID'),
             ('Carrier','Carrier'),
             ('Shipper', df_vtt.columns[10] if len(df_vtt.columns) > 10 else None),
             ('ILN/FF', df_vtt.columns[8] if len(df_vtt.columns) > 8 else None),
