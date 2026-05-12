@@ -70,6 +70,26 @@ def _due_date_day_plus_value(row, df_vtt):
         pass
     return 7
 
+
+def _format_expiration_date(row, df_vtt):
+    try:
+        if row is None or 'Expiration Date' not in df_vtt.columns:
+            return ''
+        raw_exp = row.get('Expiration Date', '')
+        if pd.isna(raw_exp):
+            return ''
+        if isinstance(raw_exp, (pd.Timestamp, datetime)):
+            return raw_exp.strftime('%d/%m/%Y')
+        try:
+            return pd.to_datetime(raw_exp).strftime('%d/%m/%Y')
+        except Exception:
+            return str(raw_exp)
+    except Exception:
+        try:
+            return '' if row is None else str(row.get('Expiration Date', ''))
+        except Exception:
+            return ''
+
 # Load data from new Excel (VTT DATA.xlsx)
 vtt_data_path = os.path.join(os.path.dirname(__file__), "VTT DATA.xlsx")
 df_vtt = pd.read_excel(vtt_data_path)
@@ -199,7 +219,7 @@ with top_section:
         st.session_state['id_select'] = all_label
 
     # Render the full top row in a single aligned layout.
-    top_cols = st.columns([0.9, 0.9, 1.35, 1.55, 1.55, 1.4, 1.4], gap="medium")
+    top_cols = st.columns([0.9, 0.9, 1.05, 1.3, 1.3, 1.15, 1.15, 1.0, 1.1, 1.15], gap="medium")
     compact_label_style = "font-size:13px; font-weight:700; line-height:1; margin:0 0 8px;"
 
     with top_cols[0]:
@@ -253,6 +273,19 @@ with top_section:
             st.markdown(render_box('PLANT', row['Name Destin Site']), unsafe_allow_html=True)
         else:
             st.info("No existe la columna Name Destin Site o no hay coincidencia.")
+    with top_cols[7]:
+        st.markdown(render_box('E/D', _format_expiration_date(row, df_vtt)), unsafe_allow_html=True)
+    with top_cols[8]:
+        commodity_value = ""
+        if row is not None:
+            if 'Commodity' in df_vtt.columns:
+                commodity_value = row.get('Commodity', "")
+            elif 'Comodity' in df_vtt.columns:
+                commodity_value = row.get('Comodity', "")
+        st.markdown(render_box('Commodity', commodity_value), unsafe_allow_html=True)
+    with top_cols[9]:
+        st.markdown("<div style='height:21px;'></div>", unsafe_allow_html=True)
+        generate_files_clicked = st.button("Generate files", key="generate_files", use_container_width=True)
 
 safety_stock_val = None
 if row is not None and 'Safety stock' in df_vtt.columns:
@@ -1601,7 +1634,7 @@ st.slider(
     "Days to Show",
     min_value=7,
     max_value=150,
-    value=st.session_state.get("days_slider_timeline", 100),
+    value=st.session_state.get("days_slider_timeline", 110),
     step=1,
     key="days_slider_timeline",
 )
@@ -1615,7 +1648,7 @@ composite_html += "<div id='timeline_capture' style='position:absolute; left:-10
 composite_html += "<div style='font-size:22px; font-weight:700; margin-bottom:8px;'>VTT View</div>"
 composite_html += f"<div style='margin-bottom:8px;'><b>POL:</b> {capture_pol} &nbsp;&nbsp; <b>POD:</b> {capture_pod} &nbsp;&nbsp; <b>Days to Show:</b> {capture_days}</div>"
 
-# Add ID, Carrier, Shipper, ILN/FF, PLANT row (E/D y Commodity irán abajo del timeline)
+# Add ID, Carrier, Shipper, ILN/FF, PLANT, E/D y Commodity en la cabecera de la captura
 _id_val = _carrier_val = _shipper_val = _iln_val = _plant_val = _commodity_val = _ed_val = ""
 if row is not None:
     try:
@@ -1653,33 +1686,20 @@ if row is not None:
     except Exception:
         _commodity_val = ''
 
-composite_html += "<div style='display:grid; grid-template-columns: max-content 1fr max-content 1fr max-content 1fr; gap:6px 12px; align-items:center; margin:6px 0 10px 0;'>"
-composite_html += f"<div style='font-weight:bold;'>ID:</div><div>{_id_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>Carrier:</div><div>{_carrier_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>Shipper:</div><div>{_shipper_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>ILN/FF:</div><div>{_iln_val}</div>"
-composite_html += f"<div style='font-weight:bold;'>PLANT:</div><div>{_plant_val}</div>"
+_ed_val = _format_expiration_date(row, df_vtt)
+
+composite_html += "<div style='display:grid; grid-template-columns: repeat(7, minmax(150px, 1fr)); gap:12px; align-items:start; margin:6px 0 10px 0;'>"
+composite_html += render_box('ID', _id_val)
+composite_html += render_box('Carrier', _carrier_val)
+composite_html += render_box('Shipper', _shipper_val)
+composite_html += render_box('ILN/FF', _iln_val)
+composite_html += render_box('PLANT', _plant_val)
+composite_html += render_box('E/D', _ed_val)
+composite_html += render_box('Commodity', _commodity_val)
 composite_html += "</div>"
 
 # Wrap the table to allow full-width capture (no fixed width)
 composite_html += f"<div style='display:inline-block; width:max-content; overflow:visible;'>{table_html}</div>"
-
-# E/D debajo del timeline en el PNG: solo calcular _ed_val, la UI se añade al final
-try:
-    if row is not None and 'Expiration Date' in df_vtt.columns:
-        _exp_date = row.get('Expiration Date', '')
-        if pd.notnull(_exp_date):
-            if isinstance(_exp_date, (pd.Timestamp, datetime)):
-                _ed_val = _exp_date.strftime('%d/%m/%Y')
-            else:
-                try:
-                    _ed_val = pd.to_datetime(_exp_date).strftime('%d/%m/%Y')
-                except Exception:
-                    _ed_val = str(_exp_date)
-        else:
-            _ed_val = ''
-except Exception:
-    pass
 
 composite_html += "<hr style='margin:16px 0;'>"
 
@@ -1698,13 +1718,6 @@ if safety_stock_val is not None:
         f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{safety_stock_val}</div>"
     )
     composite_html += "</div>"
-
-# Añadir E/D y Commodity al final de la captura, igual que en la UI
-if _ed_val or _commodity_val:
-    if _ed_val:
-        composite_html += f"<div style='margin:8px 0 4px 0;'>{render_box('E/D', _ed_val)}</div>"
-    if _commodity_val:
-        composite_html += f"<div style='margin:0 0 8px 0;'>{render_box('Commodity', _commodity_val)}</div>"
 
 composite_html += "</div>"  # end capture root
 st.markdown(composite_html, unsafe_allow_html=True)
@@ -1789,7 +1802,6 @@ def _compute_week_spans(days):
             ('Shipper', shipper_col),
             ('ILN/FF', iln_col),
             ('PLANT', 'Name Destin Site'),
-            ('Commodity', commodity_col),
         ]
 
         pairs = []
@@ -1801,7 +1813,14 @@ def _compute_week_spans(days):
             except Exception:
                 value = ''
             pairs.append((label, '' if pd.isna(value) else str(value)))
+        commodity_value = ''
+        try:
+            if row is not None and commodity_col and commodity_col in df_vtt.columns:
+                commodity_value = row.get(commodity_col, '')
+        except Exception:
+            commodity_value = ''
         pairs.append(('E/D', exp_value))
+        pairs.append(('Commodity', '' if pd.isna(commodity_value) else str(commodity_value)))
         return pairs
     current_week = None
     count = 0
@@ -1882,7 +1901,6 @@ def _snapshot_info_pairs(row, df_vtt):
         ('Shipper', shipper_col),
         ('ILN/FF', iln_col),
         ('PLANT', 'Name Destin Site'),
-        ('Commodity', commodity_col),
     ]
 
     pairs = []
@@ -1894,23 +1912,33 @@ def _snapshot_info_pairs(row, df_vtt):
         except Exception:
             value = ''
         pairs.append((label, '' if pd.isna(value) else str(value)))
+    commodity_value = ''
+    try:
+        if row is not None and commodity_col and commodity_col in df_vtt.columns:
+            commodity_value = row.get(commodity_col, '')
+    except Exception:
+        commodity_value = ''
     pairs.append(('E/D', exp_value))
+    pairs.append(('Commodity', '' if pd.isna(commodity_value) else str(commodity_value)))
     return pairs
 
 
-def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days):
-    margin = 24
-    title_h = 34
-    subtitle_h = 24
-    info_h = 24
-    section_gap = 18
-    week_h = 22
-    date_h = 22
-    row_h = 20
-    label_w = 250
-    metric_w = 64
-    final_w = 78
-    day_w = 18
+def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2):
+    def s(value):
+        return max(1, int(round(value * scale)))
+
+    margin = s(24)
+    title_h = s(34)
+    subtitle_h = s(24)
+    info_h = s(24)
+    section_gap = s(18)
+    week_h = s(22)
+    date_h = s(22)
+    row_h = s(20)
+    label_w = s(250)
+    metric_w = s(64)
+    final_w = s(78)
+    day_w = s(18)
     fixed_widths = [label_w, metric_w, metric_w, final_w]
     table_left = margin
     grid_left = table_left + sum(fixed_widths)
@@ -1923,13 +1951,13 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         section_gap + 40
     )
 
-    image = PILImage.new('RGB', (max(total_width, 1200), total_height), '#ffffff')
+    image = PILImage.new('RGB', (max(total_width, s(1200)), total_height), '#ffffff')
     draw = ImageDraw.Draw(image)
-    font_title = _load_snapshot_font(20, bold=True)
-    font_heading = _load_snapshot_font(14, bold=True)
-    font_bold = _load_snapshot_font(12, bold=True)
-    font_text = _load_snapshot_font(12)
-    font_small = _load_snapshot_font(10)
+    font_title = _load_snapshot_font(s(20), bold=True)
+    font_heading = _load_snapshot_font(s(14), bold=True)
+    font_bold = _load_snapshot_font(s(12), bold=True)
+    font_text = _load_snapshot_font(s(12))
+    font_small = _load_snapshot_font(s(10))
 
     draw.text((margin, margin), 'VTT View', font=font_title, fill='#111111')
     draw.text((margin, margin + title_h), f'POL: {selected_pol}   POD: {selected_pod}   Days to Show: {len(timeline_days)}', font=font_heading, fill='#222222')
@@ -1942,9 +1970,9 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         x = margin + col * ((image.width - margin * 2) // 3)
         y = info_y + row_index * info_h
         draw.text((x, y), f'{label}:', font=font_bold, fill='#111111')
-        draw.text((x + 95, y), value, font=font_text, fill='#333333')
+        draw.text((x + s(95), y), value, font=font_text, fill='#333333')
 
-    y = info_y + info_h * 3 + 8
+    y = info_y + info_h * 3 + s(8)
     week_spans = _compute_week_spans(timeline_days)
     x = grid_left
     for week, span in week_spans:
@@ -2029,9 +2057,25 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     if row is not None and 'Safety stock' in df_vtt.columns:
         y += section_gap
         draw.text((margin, y), 'Customer Safety STOCK', font=font_heading, fill='#111111')
-        draw.text((margin + 220, y), str(row['Safety stock']), font=font_heading, fill='#222222')
+        draw.text((margin + s(220), y), str(row['Safety stock']), font=font_heading, fill='#222222')
 
     return image
+
+
+def _build_snapshot_png_bytes(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2):
+    snapshot_image = _build_snapshot_image(
+        row=row,
+        df_vtt=df_vtt,
+        selected_pol=selected_pol,
+        selected_pod=selected_pod,
+        time_labels=time_labels,
+        headers=headers,
+        timeline_days=timeline_days,
+        scale=scale,
+    )
+    image_buffer = BytesIO()
+    snapshot_image.save(image_buffer, format='PNG', optimize=True)
+    return image_buffer.getvalue()
 
 def _get_value_safe(val):
     if pd.isna(val):
@@ -2157,6 +2201,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
     wb = Workbook()
     ws = wb.active
     ws.title = 'Timeline'
+    ws.sheet_view.showGridLines = False
 
     # styles
     bold = Font(bold=True)
@@ -2333,7 +2378,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
         snapshot_ws = wb.create_sheet('UI Snapshot')
         snapshot_ws.sheet_view.showGridLines = False
         try:
-            snapshot_image = _build_snapshot_image(
+            snapshot_png_bytes = _build_snapshot_png_bytes(
                 row=row,
                 df_vtt=df_vtt,
                 selected_pol=selected_pol,
@@ -2342,9 +2387,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
                 headers=headers,
                 timeline_days=timeline_days,
             )
-            image_buffer = BytesIO()
-            snapshot_image.save(image_buffer, format='PNG')
-            image_buffer.seek(0)
+            image_buffer = BytesIO(snapshot_png_bytes)
             xl_image = XLImage(image_buffer)
             xl_image._source_buffer = image_buffer
             xl_image.anchor = 'A1'
@@ -2360,39 +2403,21 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
 
 
-# --- Mostrar Commodity y E/D debajo del timeline y antes del botón Generate files ---
-st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
-try:
-    _commodity_display = ""
-    if row is not None:
-        if 'Commodity' in df_vtt.columns:
-            _commodity_display = str(row.get('Commodity', ''))
-        elif 'Comodity' in df_vtt.columns:
-            _commodity_display = str(row.get('Comodity', ''))
-    if _commodity_display:
-        st.markdown(render_box('Commodity', _commodity_display), unsafe_allow_html=True)
-except Exception:
-    pass
-
-try:
-    _ed_display = ""
-    if row is not None and 'Expiration Date' in df_vtt.columns:
-        _exp_date = row.get('Expiration Date', '')
-        if pd.notnull(_exp_date):
-            if isinstance(_exp_date, (pd.Timestamp, datetime)):
-                _ed_display = _exp_date.strftime('%d/%m/%Y')
-            else:
-                try:
-                    _ed_display = pd.to_datetime(_exp_date).strftime('%d/%m/%Y')
-                except Exception:
-                    _ed_display = str(_exp_date)
-    st.markdown(render_box('E/D', _ed_display), unsafe_allow_html=True)
-except Exception:
-    pass
-
 # --- Single 'Generate files' button, then show download buttons in English ---
 st.markdown("<hr style='margin:32px 0;'>", unsafe_allow_html=True)
-if st.button("Generate files", key="generate_files"):
+
+if generate_files_clicked:
+    snapshot_png_bytes = _build_snapshot_png_bytes(
+        row=row,
+        df_vtt=df_vtt,
+        selected_pol=st.session_state.get('pol_select',''),
+        selected_pod=st.session_state.get('pod_select',''),
+        time_labels=time_labels,
+        headers=headers,
+        timeline_days=timeline_days,
+    )
+    image_b64 = base64.b64encode(snapshot_png_bytes).decode('utf-8') if snapshot_png_bytes else ''
+
     excel_bytes = build_excel_workbook(
         row=row,
         df_vtt=df_vtt,
@@ -2401,7 +2426,7 @@ if st.button("Generate files", key="generate_files"):
         time_labels=time_labels,
         headers=headers,
         timeline_days=timeline_days,
-        include_snapshot_sheet=False,
+        include_snapshot_sheet=True,
     )
     excel_b64 = base64.b64encode(excel_bytes).decode('utf-8') if excel_bytes else ''
 
@@ -2430,8 +2455,6 @@ if st.button("Generate files", key="generate_files"):
     """, unsafe_allow_html=True)
     components.html(
         """ 
-        <script src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'></script>
-        <script src='https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js'></script>
         <script>
         (function(){
             function parentDoc(){
@@ -2439,26 +2462,13 @@ if st.button("Generate files", key="generate_files"):
             }
             function getBtn(){ return parentDoc().getElementById('imgBtn'); }
             function getExcelBtn(){ return parentDoc().getElementById('excelBtn'); }
-            function getArea(){
-                var d = parentDoc();
-                // Prefer off-screen composite that includes all data and KPIs
-                return d.getElementById('timeline_capture') || d.getElementById('timeline_capture_table') || d.body || document.body;
-            }
-            function ensureHtml2CanvasReady(cb){
-                if (window.html2canvas) return cb();
-                var tries = 0; (function waitLib(){
-                    if (window.html2canvas) return cb();
-                    if (++tries > 50) { alert('html2canvas no cargó.'); return; }
-                    setTimeout(waitLib, 100);
-                })();
-            }
-            function ensureExcelJsReady(cb){
-                if (window.ExcelJS) return cb();
-                var tries = 0; (function waitLib(){
-                    if (window.ExcelJS) return cb();
-                    if (++tries > 50) { alert('ExcelJS no cargó.'); return; }
-                    setTimeout(waitLib, 100);
-                })();
+            function base64ToBlob(base64, mimeType){
+                var binary = atob(base64);
+                var bytes = new Uint8Array(binary.length);
+                for (var i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return new Blob([bytes], { type: mimeType });
             }
             function downloadBlob(blob, fileName){
                 var d = parentDoc();
@@ -2470,67 +2480,25 @@ if st.button("Generate files", key="generate_files"):
                 a.click();
                 setTimeout(function(){ d.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
             }
-            function captureAreaCanvas(onSuccess){
-                ensureHtml2CanvasReady(function(){
-                    var area = getArea();
-                    if (!area) { alert('No se encontró el área visual para capturar.'); return; }
-                    window.html2canvas(area, { backgroundColor:'#fff', useCORS:true, allowTaint:true, scale:2 })
-                    .then(onSuccess)
-                    .catch(function(err){ alert('Error capturando imagen: ' + err); });
-                });
-            }
             function bind(){
                 var imageButton = getBtn();
                 var excelButton = getExcelBtn();
                 if (!imageButton || !excelButton) { setTimeout(bind, 250); return; }
                 imageButton.addEventListener('click', function(){
-                    captureAreaCanvas(function(canvas){
-                        canvas.toBlob(function(blob){
-                            if(!blob){ alert('No se pudo generar la imagen'); return; }
-                            downloadBlob(blob, '__IMAGE_FILE_NAME__');
-                        }, 'image/png', 0.95);
-                    });
+                    if (!'__IMAGE_B64__') { alert('No se pudo generar la imagen'); return; }
+                    downloadBlob(base64ToBlob('__IMAGE_B64__', 'image/png'), '__IMAGE_FILE_NAME__');
                 });
                 excelButton.addEventListener('click', function(){
-                    ensureExcelJsReady(function(){
-                        captureAreaCanvas(function(canvas){
-                            var workbook = new window.ExcelJS.Workbook();
-                            var baseWorkbookBytes = Uint8Array.from(atob('__EXCEL_B64__'), function(ch){
-                                return ch.charCodeAt(0);
-                            });
-                            workbook.xlsx.load(baseWorkbookBytes).then(function(){
-                                var existingSnapshot = workbook.getWorksheet('UI Snapshot');
-                                if (existingSnapshot) {
-                                    workbook.removeWorksheet(existingSnapshot.id);
-                                }
-                                var sheet = workbook.addWorksheet('UI Snapshot', { views: [{ showGridLines: false }] });
-                                sheet.properties.defaultRowHeight = 18;
-                                sheet.views = [{ showGridLines: false }];
-                                var imageId = workbook.addImage({
-                                    base64: canvas.toDataURL('image/png'),
-                                    extension: 'png'
-                                });
-                                sheet.addImage(imageId, {
-                                    tl: { col: 0, row: 0 },
-                                    ext: { width: canvas.width, height: canvas.height }
-                                });
-                                workbook.views = [{ activeTab: workbook.worksheets.length - 1 }];
-                                return workbook.xlsx.writeBuffer();
-                            }).then(function(buffer){
-                                var blob = new Blob([
-                                    buffer
-                                ], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                                downloadBlob(blob, '__EXCEL_FILE_NAME__');
-                            }).catch(function(err){
-                                alert('Error generando Excel: ' + err);
-                            });
-                        });
-                    });
+                    if (!'__EXCEL_B64__') { alert('No se pudo generar el Excel'); return; }
+                    downloadBlob(
+                        base64ToBlob('__EXCEL_B64__', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+                        '__EXCEL_FILE_NAME__'
+                    );
                 });
             }
             bind();
         })();
         </script>
-        """.replace('__IMAGE_FILE_NAME__', image_file_name).replace('__EXCEL_FILE_NAME__', excel_file_name).replace('__EXCEL_B64__', excel_b64),
+        """.replace('__IMAGE_FILE_NAME__', image_file_name).replace('__EXCEL_FILE_NAME__', excel_file_name).replace('__EXCEL_B64__', excel_b64).replace('__IMAGE_B64__', image_b64),
         height=10,
     )
