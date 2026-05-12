@@ -19,8 +19,10 @@ from PIL import Image as PILImage, ImageDraw, ImageFont
 
 def render_box(label, value):
     return f"""
-    <div style='font-weight:bold; margin-bottom:8px; font-size:13px;'>{label}</div>
-    <div style='padding:3px 5px; border:1px solid #eee; border-radius:4px; background:#fafafa; width:100%; max-width:none; min-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px;' title='{value}'>{value}</div>
+    <div class='vtt-box'>
+        <div class='vtt-box__label'>{label}</div>
+        <div class='vtt-box__value' title='{value}'>{value}</div>
+    </div>
     """
 
 def _coerce_to_int(val):
@@ -100,16 +102,186 @@ st.set_page_config(layout="wide")
 st.markdown(
     """
     <style>
+    :root {
+        --vtt-bg: #f3f6fb;
+        --vtt-surface: #ffffff;
+        --vtt-surface-strong: #f8fbff;
+        --vtt-border: #d7e2f0;
+        --vtt-border-soft: #e7edf5;
+        --vtt-text: #17263c;
+        --vtt-text-soft: #5f7088;
+        --vtt-primary: #183a63;
+        --vtt-primary-strong: #102845;
+        --vtt-primary-soft: #eaf2fb;
+        --vtt-success: #89e78c;
+        --vtt-weekend: #ffdede;
+        --vtt-shadow: 0 14px 34px rgba(16, 40, 69, 0.08);
+    }
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(24, 58, 99, 0.08), transparent 24%),
+            linear-gradient(180deg, #f7f9fc 0%, var(--vtt-bg) 100%);
+    }
     .main .block-container {
-        padding-top: 0.5rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-        max-width: 80% !important;
+        padding-top: 0.8rem !important;
+        padding-left: 1.1rem !important;
+        padding-right: 1.1rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 86% !important;
     }
     header[data-testid="stHeader"] {
         height: 0px !important;
         min-height: 0px !important;
         padding: 0 !important;
+    }
+    hr {
+        border: none !important;
+        height: 1px !important;
+        background: linear-gradient(90deg, transparent 0%, var(--vtt-border) 15%, var(--vtt-border) 85%, transparent 100%) !important;
+    }
+    .vtt-page-title {
+        text-align: center;
+        color: var(--vtt-primary-strong);
+        font-size: 2.2rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        margin: 0.1rem 0 0.2rem 0;
+    }
+    .vtt-page-subtitle {
+        text-align: center;
+        color: var(--vtt-text-soft);
+        font-size: 0.95rem;
+        margin: 0 0 1.35rem 0;
+    }
+    .vtt-box {
+        background: linear-gradient(180deg, var(--vtt-surface-strong) 0%, var(--vtt-surface) 100%);
+        border: 1px solid var(--vtt-border);
+        border-radius: 14px;
+        padding: 0.7rem 0.8rem;
+        box-shadow: var(--vtt-shadow);
+        min-height: 72px;
+    }
+    .vtt-box__label {
+        color: var(--vtt-text-soft);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 0.45rem;
+    }
+    .vtt-box__value {
+        color: var(--vtt-text);
+        font-size: 0.95rem;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .vtt-panel {
+        background: var(--vtt-surface);
+        border: 1px solid var(--vtt-border);
+        border-radius: 18px;
+        padding: 1rem 1rem 0.9rem 1rem;
+        box-shadow: var(--vtt-shadow);
+        margin-top: 0.45rem;
+    }
+    .vtt-panel__title,
+    .vtt-section-title {
+        color: var(--vtt-primary-strong);
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.75rem;
+    }
+    .vtt-kpi-row {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+    }
+    .vtt-kpi-card {
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        background: linear-gradient(135deg, #ffffff 0%, #f3f8ff 100%);
+        border: 1px solid var(--vtt-border);
+        border-radius: 18px;
+        padding: 0.95rem 1.1rem;
+        box-shadow: var(--vtt-shadow);
+        margin: 1rem 0 1.1rem 0;
+        width: auto;
+        min-width: 320px;
+        max-width: 460px;
+    }
+    .vtt-kpi-card__label {
+        color: var(--vtt-primary-strong);
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+    }
+    .vtt-kpi-card__value {
+        min-width: 72px;
+        text-align: center;
+        color: var(--vtt-primary-strong);
+        font-size: 1.7rem;
+        font-weight: 900;
+        background: #ffffff;
+        border: 1px solid var(--vtt-border);
+        border-radius: 14px;
+        padding: 0.3rem 0.8rem;
+    }
+    .vtt-action-bar {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        margin: 24px 0 8px 0;
+    }
+    .vtt-action-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 170px;
+        background: linear-gradient(135deg, var(--vtt-primary) 0%, #24548d 100%);
+        color: #fff;
+        border: none;
+        border-radius: 14px;
+        padding: 12px 18px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 12px 24px rgba(24, 58, 99, 0.22);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .vtt-action-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 28px rgba(24, 58, 99, 0.28);
+    }
+    div[data-baseweb="select"] > div {
+        background: linear-gradient(180deg, var(--vtt-surface-strong) 0%, var(--vtt-surface) 100%) !important;
+        border: 1px solid var(--vtt-border) !important;
+        border-radius: 14px !important;
+        min-height: 50px !important;
+        box-shadow: var(--vtt-shadow) !important;
+    }
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] input {
+        color: var(--vtt-text) !important;
+        font-weight: 600 !important;
+    }
+    .stButton > button {
+        min-height: 50px !important;
+        border-radius: 14px !important;
+        border: none !important;
+        background: linear-gradient(135deg, var(--vtt-primary) 0%, #24548d 100%) !important;
+        color: #ffffff !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.01em;
+        box-shadow: 0 12px 24px rgba(24, 58, 99, 0.22) !important;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, var(--vtt-primary-strong) 0%, var(--vtt-primary) 100%) !important;
     }
     /* vertical text utility for date headers */
     .vtt-vertical-text {
@@ -124,7 +296,10 @@ st.markdown(
 )
 
 st.markdown(
-    "<h1 style='text-align:center; margin:4px 0 12px 0;'>VTT Tool</h1>",
+    """
+    <div class='vtt-page-title'>VTT Tool</div>
+    <div class='vtt-page-subtitle'>Lead time and transit planning dashboard</div>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -220,7 +395,7 @@ with top_section:
 
     # Render the full top row in a single aligned layout.
     top_cols = st.columns([0.9, 0.9, 1.05, 1.3, 1.3, 1.15, 1.15, 1.0, 1.1, 1.15], gap="medium")
-    compact_label_style = "font-size:13px; font-weight:700; line-height:1; margin:0 0 8px;"
+    compact_label_style = "font-size:11px; font-weight:800; color:#5f7088; letter-spacing:0.08em; text-transform:uppercase; line-height:1; margin:0 0 8px;"
 
     with top_cols[0]:
         st.markdown(f"<div style='{compact_label_style}'>POL</div>", unsafe_allow_html=True)
@@ -1268,7 +1443,12 @@ for i in range(time_rows):
 table_html += "</tbody></table>"
 table_html_visible += "</tbody></table>"
 # Render visible table as before, but with a distinct id to avoid capture conflicts
-wrapped_html_visible = f"<div id='timeline_capture_table' style='display:inline-block'>{table_html_visible}</div>"
+wrapped_html_visible = (
+    "<div class='vtt-panel'>"
+    "<div class='vtt-panel__title'>Timeline Overview</div>"
+    f"<div id='timeline_capture_table' style='display:inline-block'>{table_html_visible}</div>"
+    "</div>"
+)
 st.markdown(wrapped_html_visible, unsafe_allow_html=True)
 
 
@@ -1522,16 +1702,19 @@ try:
     max_days_kpi = len(timeline_days)
 
     if max_days_kpi > 0:
+        summary_ui_label_width = 200
+        summary_ui_value_width = 50
         summary_ui_spacer_col_width = 50
-        kpi_gantt_html = "<div style='margin-top:12px;'><div style=\"font-size:18px; font-weight:700; margin-bottom:4px;\">VTT SUMMARY</div>"
+        kpi_gantt_html = "<div class='vtt-panel' style='margin-top:16px;'><div class='vtt-panel__title'>VTT SUMMARY</div>"
         # Usar mismo tamaño base de fuente que la tabla superior
-        kpi_gantt_html += "<table style='border-collapse:collapse; width:100%; font-size:12px;'>"
+        kpi_gantt_html += "<table style='border-collapse:collapse; width:auto; font-size:12px;'>"
 
         # Cabecero de semanas alineado con la zona de tiempos (cálculo local)
         kpi_gantt_html += "<thead><tr>"
         # 2 columnas fijas para etiqueta y valor, mas 2 separadores invisibles que replican Day+ y Final Day
         kpi_gantt_html += (
-            f"<th style='border:none;'></th><th style='border:none;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_label_width}px; width:{summary_ui_label_width}px; max-width:{summary_ui_label_width}px; padding:0;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; padding:0;'></th>"
             f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
             f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
         )
@@ -1557,7 +1740,8 @@ try:
         kpi_gantt_html += "<tr>"
         # 2 columnas vacías equivalentes a etiqueta y valor, mas 2 separadores invisibles para alinear el inicio del calendario
         kpi_gantt_html += (
-            f"<th style='border:none;'></th><th style='border:none;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_label_width}px; width:{summary_ui_label_width}px; max-width:{summary_ui_label_width}px; padding:0;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; padding:0;'></th>"
             f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
             f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
         )
@@ -1586,13 +1770,13 @@ try:
             kpi_gantt_html += "<tr>"
             # Etiqueta KPI (columna Steps)
             kpi_gantt_html += (
-                "<td style='padding:1px 4px; border:1px solid #eee; text-align:left; font-weight:bold; background:#f5f5f5; min-width:200px; white-space:nowrap; height:15px; line-height:15px; font-size:14px;'>"
+                f"<td style='padding:1px 4px; border:1px solid #eee; text-align:left; font-weight:bold; background:#f5f5f5; min-width:{summary_ui_label_width}px; width:{summary_ui_label_width}px; max-width:{summary_ui_label_width}px; white-space:nowrap; height:15px; line-height:15px; font-size:14px;'>"
                 f"{label_txt}</td>"
             )
             # Valor numérico (columna Day)
             display_val = str(val)  # Mostrar siempre el valor, incluso si es 0 o negativo, para depuración
             kpi_gantt_html += (
-                "<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:50px; height:15px; line-height:15px; font-size:14px;'>"
+                f"<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; height:15px; line-height:15px; font-size:14px;'>"
                 f"{display_val}</td>"
             )
             # Separadores invisibles para mantener alineado el inicio de semanas con Day+ y Final Day de la tabla superior
@@ -1629,17 +1813,20 @@ except Exception:
 
 # Mostrar Customer Safety STOCK debajo del Gantt de KPIs
 if safety_stock_val is not None:
-    col_label_cs, col_value_cs = st.columns([1, 3], gap="small")
-    with col_label_cs:
-        st.markdown("<div style='font-weight:bold; font-size:25px; margin-bottom:8px;'>Customer Safety STOCK</div>", unsafe_allow_html=True)
-    with col_value_cs:
-        st.markdown(
-            f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{safety_stock_val}</div>",
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f"""
+        <div class='vtt-kpi-row'>
+            <div class='vtt-kpi-card'>
+                <div class='vtt-kpi-card__label'>Customer Safety STOCK</div>
+                <div class='vtt-kpi-card__value'>{safety_stock_val}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # Controles de Timeline al final (sin mover la tabla de gantt)
-st.subheader("Timeline")
+st.markdown("<div class='vtt-section-title'>Timeline Controls</div>", unsafe_allow_html=True)
 st.slider(
     "Days to Show",
     min_value=7,
@@ -1722,11 +1909,11 @@ except Exception:
 
 # Mostrar Customer Safety STOCK debajo del VTT SUMMARY en la captura, igual que en la UI
 if safety_stock_val is not None:
-    composite_html += "<div style='margin-top:12px; display:flex; align-items:center; gap:16px;'>"
-    composite_html += "<div style='font-weight:bold; font-size:25px;'>Customer Safety STOCK</div>"
-    composite_html += (
-        f"<div style='padding:4px 8px; border:1px solid #eee; border-radius:4px; background:#fafafa; font-size:28px;'>{safety_stock_val}</div>"
-    )
+    composite_html += "<div class='vtt-kpi-row' style='margin-top:12px;'>"
+    composite_html += "<div class='vtt-kpi-card'>"
+    composite_html += "<div class='vtt-kpi-card__label'>Customer Safety STOCK</div>"
+    composite_html += f"<div class='vtt-kpi-card__value'>{safety_stock_val}</div>"
+    composite_html += "</div>"
     composite_html += "</div>"
 
 composite_html += "</div>"  # end capture root
@@ -1961,7 +2148,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         margin * 2 + title_h + subtitle_h + info_h * 3 + section_gap +
         week_h + date_h + row_h * len(time_labels) + section_gap +
         title_h + week_h + date_h + row_h * len(kpi_rows) +
-        section_gap + s(40)
+        section_gap + max(s(120), fs(80))
     )
 
     image = PILImage.new('RGB', (max(total_width, s(1200)), total_height), '#ffffff')
@@ -2084,9 +2271,32 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     if row is not None and 'Safety stock' in df_vtt.columns:
         y += section_gap
         safety_stock_label = 'Customer Safety STOCK'
-        draw.text((margin, y), safety_stock_label, font=font_heading, fill='#111111')
-        safety_stock_label_width, _ = _text_size(draw, safety_stock_label, font_heading)
-        draw.text((margin + safety_stock_label_width + s(24), y), str(row['Safety stock']), font=font_heading, fill='#222222')
+        safety_stock_value = str(row['Safety stock'])
+        card_pad_x = s(22)
+        card_gap = s(24)
+        badge_pad_x = s(18)
+        badge_pad_y = s(10)
+        label_width, label_height = _text_size(draw, safety_stock_label, font_bold)
+        value_width, value_height = _text_size(draw, safety_stock_value, font_heading)
+        badge_width = max(s(72), value_width + badge_pad_x * 2)
+        badge_height = max(s(52), value_height + badge_pad_y * 2)
+        card_height = max(s(74), label_height + s(28))
+        card_width = label_width + badge_width + card_gap + card_pad_x * 2
+        card_box = (margin, y, margin + card_width, y + card_height)
+        draw.rounded_rectangle(card_box, radius=s(18), fill='#f3f8ff', outline='#d7e2f0', width=max(1, s(1)))
+
+        label_x = margin + card_pad_x
+        label_y = y + (card_height - label_height) // 2
+        draw.text((label_x, label_y), safety_stock_label, font=font_bold, fill='#102845')
+
+        badge_x1 = card_box[2] - card_pad_x - badge_width
+        badge_y1 = y + (card_height - badge_height) // 2
+        badge_x2 = badge_x1 + badge_width
+        badge_y2 = badge_y1 + badge_height
+        draw.rounded_rectangle((badge_x1, badge_y1, badge_x2, badge_y2), radius=s(14), fill='#ffffff', outline='#d7e2f0', width=max(1, s(1)))
+        value_x = badge_x1 + (badge_width - value_width) // 2
+        value_y = badge_y1 + (badge_height - value_height) // 2 - s(1)
+        draw.text((value_x, value_y), safety_stock_value, font=font_heading, fill='#102845')
 
     return image
 
@@ -2490,9 +2700,9 @@ if generate_files_clicked:
     image_file_name = f"{base_file_name}.png"
 
     st.markdown(f"""
-    <div style='width:100%; display:flex; justify-content:center; align-items:center; margin:32px 0;'>
-        <button id='excelBtn' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;margin-right:24px;'>Excel file</button>
-        <button id='imgBtn' style='display:inline-block;background:#1f77b4;color:#fff;border:none;border-radius:6px;padding:10px 16px;font-size:18px;cursor:pointer;'>Image</button>
+    <div class='vtt-action-bar'>
+        <button id='excelBtn' class='vtt-action-btn'>Excel file</button>
+        <button id='imgBtn' class='vtt-action-btn'>Image</button>
     </div>
     """, unsafe_allow_html=True)
     components.html(
