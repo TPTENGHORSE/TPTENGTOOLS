@@ -1522,14 +1522,19 @@ try:
     max_days_kpi = len(timeline_days)
 
     if max_days_kpi > 0:
+        summary_ui_spacer_col_width = 50
         kpi_gantt_html = "<div style='margin-top:12px;'><div style=\"font-size:18px; font-weight:700; margin-bottom:4px;\">VTT SUMMARY</div>"
         # Usar mismo tamaño base de fuente que la tabla superior
         kpi_gantt_html += "<table style='border-collapse:collapse; width:100%; font-size:12px;'>"
 
         # Cabecero de semanas alineado con la zona de tiempos (cálculo local)
         kpi_gantt_html += "<thead><tr>"
-        # 4 columnas fijas para alinear con Steps, Day, Day+, Final Day
-        kpi_gantt_html += "<th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th>"
+        # 2 columnas fijas para etiqueta y valor, mas 2 separadores invisibles que replican Day+ y Final Day
+        kpi_gantt_html += (
+            f"<th style='border:none;'></th><th style='border:none;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
+        )
         current_week = None
         span_count = 0
         for idx, d_week in enumerate(timeline_days):
@@ -1550,8 +1555,12 @@ try:
 
         # Fila de días (M,T,W,...) también alineada
         kpi_gantt_html += "<tr>"
-        # 4 columnas vacías equivalentes a Steps/Day/Day+/Final Day
-        kpi_gantt_html += "<th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th><th style='border:none;'></th>"
+        # 2 columnas vacías equivalentes a etiqueta y valor, mas 2 separadores invisibles para alinear el inicio del calendario
+        kpi_gantt_html += (
+            f"<th style='border:none;'></th><th style='border:none;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
+            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
+        )
         for d_day in timeline_days:
             if d_day.weekday() in (5, 6):
                 th_style = "padding:0 1px; border:1px solid #eee; min-width:15px; width:18px; height:50px; text-align:center; background:#ffd6d6; font-size:12px; vertical-align:bottom;"
@@ -1568,7 +1577,7 @@ try:
             if val is None and start_day is None:
                 kpi_gantt_html += (
                     "<tr>"
-                    f"<td colspan='{total_kpi_columns}' style='padding:6px 4px 6px 2cm; border:1px solid #eee; text-align:left; font-weight:bold; background:#ffffff; min-width:200px; white-space:nowrap; font-size:18px;'>"
+                    f"<td colspan='{total_kpi_columns}' style='padding:6px 4px 6px 2cm; border:1px solid #1f4e79; text-align:left; font-weight:bold; color:#ffffff; background:#1f4e79; min-width:200px; white-space:nowrap; font-size:18px;'>"
                     f"{label_txt}</td>"
                     "</tr>"
                 )
@@ -1586,10 +1595,11 @@ try:
                 "<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:50px; height:15px; line-height:15px; font-size:14px;'>"
                 f"{display_val}</td>"
             )
-            # Columnas vacías para Day+ y Final Day, con anchos equivalentes
-            kpi_gantt_html += "<td style='padding:1px 4px; border:1px solid #eee; min-width:50px; height:15px; line-height:15px;'></td>"
-            kpi_gantt_html += "<td style='padding:1px 4px; border:1px solid #eee; min-width:50px; height:15px; line-height:15px;'></td>"
-
+            # Separadores invisibles para mantener alineado el inicio de semanas con Day+ y Final Day de la tabla superior
+            kpi_gantt_html += (
+                f"<td style='padding:0; border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; height:15px; background:transparent;'></td>"
+                f"<td style='padding:0; border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; height:15px; background:transparent;'></td>"
+            )
             # Barras de días (Gantt secuencial) alineadas con timeline_days
             for idx, _day in enumerate(timeline_days, start=1):
                 if val and val > 0 and start_day:
@@ -1923,22 +1933,25 @@ def _snapshot_info_pairs(row, df_vtt):
     return pairs
 
 
-def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2):
+def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2, font_multiplier=1):
     def s(value):
         return max(1, int(round(value * scale)))
 
+    def fs(value):
+        return max(1, int(round(value * scale * font_multiplier)))
+
     margin = s(24)
-    title_h = s(34)
-    subtitle_h = s(24)
-    info_h = s(24)
+    title_h = fs(68)
+    subtitle_h = fs(48)
+    info_h = fs(48)
     section_gap = s(18)
-    week_h = s(22)
-    date_h = s(22)
-    row_h = s(20)
-    label_w = s(250)
-    metric_w = s(64)
-    final_w = s(78)
-    day_w = s(18)
+    week_h = fs(36)
+    date_h = fs(36)
+    row_h = fs(34)
+    label_w = s(360)
+    metric_w = s(88)
+    final_w = s(108)
+    day_w = s(28)
     fixed_widths = [label_w, metric_w, metric_w, final_w]
     table_left = margin
     grid_left = table_left + sum(fixed_widths)
@@ -1948,16 +1961,16 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         margin * 2 + title_h + subtitle_h + info_h * 3 + section_gap +
         week_h + date_h + row_h * len(time_labels) + section_gap +
         title_h + week_h + date_h + row_h * len(kpi_rows) +
-        section_gap + 40
+        section_gap + s(40)
     )
 
     image = PILImage.new('RGB', (max(total_width, s(1200)), total_height), '#ffffff')
     draw = ImageDraw.Draw(image)
-    font_title = _load_snapshot_font(s(20), bold=True)
-    font_heading = _load_snapshot_font(s(14), bold=True)
-    font_bold = _load_snapshot_font(s(12), bold=True)
-    font_text = _load_snapshot_font(s(12))
-    font_small = _load_snapshot_font(s(10))
+    font_title = _load_snapshot_font(fs(40), bold=True)
+    font_heading = _load_snapshot_font(fs(28), bold=True)
+    font_bold = _load_snapshot_font(fs(24), bold=True)
+    font_text = _load_snapshot_font(fs(24))
+    font_small = _load_snapshot_font(s(20))
 
     draw.text((margin, margin), 'VTT View', font=font_title, fill='#111111')
     draw.text((margin, margin + title_h), f'POL: {selected_pol}   POD: {selected_pod}   Days to Show: {len(timeline_days)}', font=font_heading, fill='#222222')
@@ -1969,12 +1982,17 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         row_index = index // 3
         x = margin + col * ((image.width - margin * 2) // 3)
         y = info_y + row_index * info_h
-        draw.text((x, y), f'{label}:', font=font_bold, fill='#111111')
-        draw.text((x + s(95), y), value, font=font_text, fill='#333333')
+        label_text = f'{label}:'
+        draw.text((x, y), label_text, font=font_bold, fill='#111111')
+        label_width, _ = _text_size(draw, label_text, font_bold)
+        draw.text((x + label_width + s(24), y), value, font=font_text, fill='#333333')
 
     y = info_y + info_h * 3 + s(8)
     week_spans = _compute_week_spans(timeline_days)
-    x = grid_left
+    summary_fixed_widths = [label_w, metric_w]
+    summary_grid_left = table_left + sum(summary_fixed_widths)
+
+    x = summary_grid_left
     for week, span in week_spans:
         _draw_cell(draw, (x, y, x + span * day_w, y + week_h), f'W{week}', fill='#fffbe6', font=font_bold, align='center')
         x += span * day_w
@@ -2026,7 +2044,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     y += week_h
 
     x = table_left
-    for width in fixed_widths:
+    for width in summary_fixed_widths:
         _draw_cell(draw, (x, y, x + width, y + date_h), fill='#ffffff')
         x += width
     for day in timeline_days:
@@ -2036,15 +2054,24 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     y += date_h
 
     for label, value, start_day in kpi_rows:
+        if label == 'OVS SAP STAGES' and value is None and start_day is None:
+            _draw_cell(
+                draw,
+                (table_left, y, table_left + sum(summary_fixed_widths) + day_w * len(timeline_days), y + row_h),
+                label,
+                fill='#1f4e79',
+                outline='#1f4e79',
+                font=font_bold,
+                text_fill='#ffffff',
+                align='left',
+            )
+            y += row_h
+            continue
         x = table_left
         _draw_cell(draw, (x, y, x + label_w, y + row_h), label, fill='#f5f5f5', font=font_bold)
         x += label_w
         _draw_cell(draw, (x, y, x + metric_w, y + row_h), value if value else '-', font=font_text, align='center')
         x += metric_w
-        _draw_cell(draw, (x, y, x + metric_w, y + row_h), fill='#ffffff')
-        x += metric_w
-        _draw_cell(draw, (x, y, x + final_w, y + row_h), fill='#ffffff')
-        x += final_w
         end_day = start_day + value - 1 if value and start_day else 0
         for day_index, _day in enumerate(timeline_days, start=1):
             fill = '#ffffff'
@@ -2056,13 +2083,15 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
 
     if row is not None and 'Safety stock' in df_vtt.columns:
         y += section_gap
-        draw.text((margin, y), 'Customer Safety STOCK', font=font_heading, fill='#111111')
-        draw.text((margin + s(220), y), str(row['Safety stock']), font=font_heading, fill='#222222')
+        safety_stock_label = 'Customer Safety STOCK'
+        draw.text((margin, y), safety_stock_label, font=font_heading, fill='#111111')
+        safety_stock_label_width, _ = _text_size(draw, safety_stock_label, font_heading)
+        draw.text((margin + safety_stock_label_width + s(24), y), str(row['Safety stock']), font=font_heading, fill='#222222')
 
     return image
 
 
-def _build_snapshot_png_bytes(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2):
+def _build_snapshot_png_bytes(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2, font_multiplier=1):
     snapshot_image = _build_snapshot_image(
         row=row,
         df_vtt=df_vtt,
@@ -2072,6 +2101,7 @@ def _build_snapshot_png_bytes(row, df_vtt, selected_pol, selected_pod, time_labe
         headers=headers,
         timeline_days=timeline_days,
         scale=scale,
+        font_multiplier=font_multiplier,
     )
     image_buffer = BytesIO()
     snapshot_image.save(image_buffer, format='PNG', optimize=True)
@@ -2342,7 +2372,22 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
     kpi_rows = _build_kpi_rows(row, df_vtt)
 
+    summary_start_col = 3
+
     for label_txt, val, start_day in kpi_rows:
+        if label_txt == 'OVS SAP STAGES' and val is None and start_day is None:
+            ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=summary_start_col + len(timeline_days) - 1)
+            ovs_cell = ws.cell(row=rr, column=1, value=label_txt)
+            ovs_cell.font = Font(bold=True, color='FFFFFF')
+            ovs_cell.fill = PatternFill(fill_type='solid', fgColor='1F4E79')
+            ovs_cell.border = border
+            ovs_cell.alignment = Alignment(horizontal='left')
+            for ci in range(1, summary_start_col + len(timeline_days)):
+                ws.cell(row=rr, column=ci).border = border
+                ws.cell(row=rr, column=ci).fill = PatternFill(fill_type='solid', fgColor='1F4E79')
+            rr += 1
+            continue
+
         ws.cell(row=rr, column=1, value=label_txt).font = bold
         ws.cell(row=rr, column=1).border = border
         ws.cell(row=rr, column=1).alignment = Alignment(horizontal='left')
@@ -2351,13 +2396,9 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
         ws.cell(row=rr, column=2, value=display_val).border = border
         ws.cell(row=rr, column=2).alignment = Alignment(horizontal='center')
 
-        # Columnas vacías para Day+ y Final Day (solo para mantener estructura)
-        for ci in (3, 4):
-            ws.cell(row=rr, column=ci, value="").border = border
-
         # Pintar mini-Gantt en las columnas de días usando mismo eje temporal
         for idx, d in enumerate(timeline_days, start=0):
-            ci = start_col + idx
+            ci = summary_start_col + idx
             cell = ws.cell(row=rr, column=ci, value="")
             cell.border = border
             if val and val > 0 and start_day:
@@ -2415,6 +2456,7 @@ if generate_files_clicked:
         time_labels=time_labels,
         headers=headers,
         timeline_days=timeline_days,
+        font_multiplier=1,
     )
     image_b64 = base64.b64encode(snapshot_png_bytes).decode('utf-8') if snapshot_png_bytes else ''
 
