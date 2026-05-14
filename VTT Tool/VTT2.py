@@ -57,6 +57,18 @@ def _coerce_to_int(val):
         return 0
 
 
+def _sorted_filter_values(values):
+    def _sort_key(value):
+        normalized = str(value).strip()
+        if re.fullmatch(r"[-+]?\d+(?:[\.,]\d+)?", normalized):
+            numeric_value = float(normalized.replace(',', '.'))
+            return (0, numeric_value, normalized.lower())
+        return (1, normalized.lower(), normalized.lower())
+
+    unique_values = [str(value).strip() for value in values if str(value).strip()]
+    return sorted(set(unique_values), key=_sort_key)
+
+
 def _due_date_day_plus_value(row, df_vtt):
     try:
         if row is None:
@@ -420,6 +432,12 @@ with top_section:
             result = result[result['ID'].astype(str) == str(id_value)]
         return result
 
+    def _apply_shipper_filter(dataframe, shipper_column, shipper_value=all_label):
+        result = dataframe
+        if shipper_column and shipper_column in result.columns and shipper_value and shipper_value != all_label:
+            result = result[result[shipper_column].astype(str).str.strip() == str(shipper_value).strip()]
+        return result
+
     def _set_last_changed_filter(filter_name):
         st.session_state['_last_changed_filter'] = filter_name
 
@@ -430,19 +448,23 @@ with top_section:
         st.session_state['pod_select'] = all_label
     if 'id_select' not in st.session_state:
         st.session_state['id_select'] = all_label
+    if 'shipper_select' not in st.session_state:
+        st.session_state['shipper_select'] = all_label
     if '_last_changed_filter' not in st.session_state:
         st.session_state['_last_changed_filter'] = None
 
     # POL stays global. POD cascades from POL. ID stays global so it never blocks later POL/POD changes.
     all_pol_options = [all_label] + (df_vtt['POL'].dropna().astype(str).unique().tolist() if 'POL' in df_vtt.columns else [])
     all_pod_options = [all_label] + (df_vtt['POD'].dropna().astype(str).unique().tolist() if 'POD' in df_vtt.columns else [])
-    all_id_options = [all_label] + (df_vtt['ID'].dropna().astype(str).unique().tolist() if 'ID' in df_vtt.columns else [])
+    all_id_options = [all_label] + (_sorted_filter_values(df_vtt['ID'].dropna().tolist()) if 'ID' in df_vtt.columns else [])
+    shipper_col = df_vtt.columns[10] if len(df_vtt.columns) > 10 else None
     pol_options = all_pol_options
     id_options = all_id_options
 
     selected_pol_value = st.session_state.get('pol_select', all_label)
     selected_pod_value = st.session_state.get('pod_select', all_label)
     selected_id_value = st.session_state.get('id_select', all_label)
+    selected_shipper_value = st.session_state.get('shipper_select', all_label)
     last_changed_filter = st.session_state.get('_last_changed_filter')
 
     if selected_pol_value != all_label and 'POL' in df_vtt.columns and 'POD' in df_vtt.columns:
@@ -455,6 +477,7 @@ with top_section:
         id_scope_df = df_vtt[df_vtt['ID'].astype(str) == str(selected_id_value)]
         pol_from_id = id_scope_df['POL'].dropna().astype(str).unique().tolist() if 'POL' in id_scope_df.columns else []
         pod_from_id = id_scope_df['POD'].dropna().astype(str).unique().tolist() if 'POD' in id_scope_df.columns else []
+        shipper_from_id = _sorted_filter_values(id_scope_df[shipper_col].dropna().tolist()) if shipper_col and shipper_col in id_scope_df.columns else []
 
         if len(pol_from_id) == 1:
             st.session_state['pol_select'] = pol_from_id[0]
@@ -465,6 +488,11 @@ with top_section:
             st.session_state['pod_select'] = pod_from_id[0]
         elif pod_from_id and st.session_state.get('pod_select', all_label) not in pod_from_id:
             st.session_state['pod_select'] = pod_from_id[0]
+
+        if len(shipper_from_id) == 1:
+            st.session_state['shipper_select'] = shipper_from_id[0]
+        elif shipper_from_id and st.session_state.get('shipper_select', all_label) not in shipper_from_id:
+            st.session_state['shipper_select'] = shipper_from_id[0]
 
     elif (
         last_changed_filter in ('pol_select', 'pod_select')
@@ -487,6 +515,33 @@ with top_section:
         elif not id_from_pol_pod:
             st.session_state['id_select'] = all_label
 
+    elif (
+        last_changed_filter == 'shipper_select'
+        and selected_shipper_value != all_label
+        and shipper_col
+        and shipper_col in df_vtt.columns
+        and 'ID' in df_vtt.columns
+    ):
+        shipper_id_scope_df = _apply_cross_filters(
+            df_vtt,
+            pol_value=st.session_state.get('pol_select', all_label),
+            pod_value=st.session_state.get('pod_select', all_label),
+            id_value=all_label,
+        )
+        shipper_id_scope_df = _apply_shipper_filter(
+            shipper_id_scope_df,
+            shipper_col,
+            shipper_value=selected_shipper_value,
+        )
+        id_from_shipper = _sorted_filter_values(shipper_id_scope_df['ID'].dropna().tolist())
+        current_id_value = st.session_state.get('id_select', all_label)
+        if len(id_from_shipper) == 1:
+            st.session_state['id_select'] = id_from_shipper[0]
+        elif id_from_shipper and current_id_value not in id_from_shipper:
+            st.session_state['id_select'] = id_from_shipper[0]
+        elif not id_from_shipper:
+            st.session_state['id_select'] = all_label
+
     # Keep current values valid
     if st.session_state.get('pol_select', all_label) not in pol_options:
         st.session_state['pol_select'] = all_label
@@ -494,6 +549,16 @@ with top_section:
         st.session_state['pod_select'] = all_label
     if st.session_state.get('id_select', all_label) not in id_options:
         st.session_state['id_select'] = all_label
+
+    shipper_scope_df = _apply_cross_filters(
+        df_vtt,
+        pol_value=st.session_state.get('pol_select', all_label),
+        pod_value=st.session_state.get('pod_select', all_label),
+        id_value=all_label,
+    )
+    shipper_options = [all_label] + (_sorted_filter_values(shipper_scope_df[shipper_col].dropna().tolist()) if shipper_col and shipper_col in shipper_scope_df.columns else [])
+    if st.session_state.get('shipper_select', all_label) not in shipper_options:
+        st.session_state['shipper_select'] = all_label
 
     # Render the full top row in a single aligned layout.
     top_cols = st.columns([0.9, 0.9, 1.05, 1.3, 1.3, 1.15, 1.15, 1.0, 1.1, 1.15], gap="medium")
@@ -516,6 +581,11 @@ with top_section:
         pod_value=st.session_state.get('pod_select', all_label),
         id_value=st.session_state.get('id_select', all_label),
     )
+    filtered_df = _apply_shipper_filter(
+        filtered_df,
+        shipper_col,
+        shipper_value=st.session_state.get('shipper_select', all_label),
+    )
 
     if not filtered_df.empty:
         row = filtered_df.iloc[0]
@@ -528,12 +598,9 @@ with top_section:
         else:
             st.info("No existe la columna Carrier (Carrier) o no hay coincidencia.")
     with top_cols[4]:
-        if row is not None and len(df_vtt.columns) > 10:
-            try:
-                col_k = df_vtt.columns[10]
-                st.markdown(render_box('Shipper', row.get(col_k, "")), unsafe_allow_html=True)
-            except Exception:
-                st.info("No se pudo leer la columna K (Shipper) o no hay coincidencia.")
+        if shipper_col and shipper_col in df_vtt.columns:
+            st.markdown(f"<div style='{compact_label_style}'>Shipper</div>", unsafe_allow_html=True)
+            st.selectbox("Shipper", shipper_options, key="shipper_select", label_visibility="collapsed", on_change=_set_last_changed_filter, args=('shipper_select',))
         else:
             st.info("No se pudo leer la columna K (Shipper) o no hay coincidencia.")
     with top_cols[5]:
