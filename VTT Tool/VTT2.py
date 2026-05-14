@@ -168,6 +168,22 @@ def _load_snapshot_font_impl(size, bold=False):
     return ImageFont.load_default()
 
 
+def _snapshot_font_multiplier(font_multiplier=None):
+    if font_multiplier and font_multiplier > 0:
+        return font_multiplier
+
+    override = os.environ.get('VTT_SNAPSHOT_FONT_MULTIPLIER', '').strip()
+    if override:
+        try:
+            parsed = float(override.replace(',', '.'))
+            if parsed > 0:
+                return parsed
+        except Exception:
+            pass
+
+    return 1.18 if os.name != 'nt' else 1.0
+
+
 def _visible_timeline_step_data(display_index, row, df_vtt):
     if display_index < 9 or row is None:
         return None
@@ -367,10 +383,24 @@ st.markdown(
     .timeline-table {
         border-collapse: separate !important;
         border-spacing: 0;
+        font-size: 14px;
     }
     .timeline-table th,
     .timeline-table td {
         box-sizing: border-box;
+    }
+    .timeline-table thead tr:first-child th {
+        font-size: 15px !important;
+    }
+    .timeline-table thead tr:nth-child(2) th {
+        font-size: 13px !important;
+    }
+    .timeline-table tbody td {
+        font-size: 14px !important;
+        height: 18px !important;
+        line-height: 18px !important;
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
     }
     .timeline-table tr > :nth-child(1) {
         position: sticky;
@@ -424,10 +454,24 @@ st.markdown(
     .summary-table {
         border-collapse: separate !important;
         border-spacing: 0;
+        font-size: 14px;
     }
     .summary-table th,
     .summary-table td {
         box-sizing: border-box;
+    }
+    .summary-table thead tr:first-child th {
+        font-size: 15px !important;
+    }
+    .summary-table thead tr:nth-child(2) th {
+        font-size: 13px !important;
+    }
+    .summary-table tbody td {
+        font-size: 14px !important;
+        height: 18px !important;
+        line-height: 18px !important;
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
     }
     .summary-table tr > :nth-child(1) {
         position: sticky;
@@ -2378,20 +2422,7 @@ def _compute_week_spans(days):
 
 
 def _load_snapshot_font(size, bold=False):
-    candidates = []
-    if os.name == 'nt':
-        font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
-        candidates.extend([
-            os.path.join(font_dir, 'arialbd.ttf' if bold else 'arial.ttf'),
-            os.path.join(font_dir, 'calibrib.ttf' if bold else 'calibri.ttf'),
-        ])
-    candidates.extend(['arialbd.ttf' if bold else 'arial.ttf', 'DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf'])
-    for candidate in candidates:
-        try:
-            return ImageFont.truetype(candidate, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
+    return _load_snapshot_font_impl(size, bold=bold)
 
 
 def _text_size(draw, text, font):
@@ -2460,7 +2491,9 @@ def _snapshot_info_pairs(row, df_vtt):
     return pairs
 
 
-def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2, font_multiplier=1):
+def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2, font_multiplier=None):
+    font_multiplier = _snapshot_font_multiplier(font_multiplier)
+
     def s(value):
         return max(1, int(round(value * scale)))
 
@@ -2645,7 +2678,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     return image
 
 
-def _build_snapshot_png_bytes(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2, font_multiplier=1):
+def _build_snapshot_png_bytes(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, scale=2, font_multiplier=None):
     snapshot_image = _build_snapshot_image(
         row=row,
         df_vtt=df_vtt,
@@ -3115,7 +3148,6 @@ if generate_files_clicked:
         time_labels=time_labels,
         headers=headers,
         timeline_days=timeline_days,
-        font_multiplier=1,
     )
     image_b64 = base64.b64encode(snapshot_png_bytes).decode('utf-8') if snapshot_png_bytes else ''
 

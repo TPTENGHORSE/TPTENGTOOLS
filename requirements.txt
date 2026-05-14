@@ -1,10 +1,10 @@
-streamlit
-plotly
-matplotlib
-openpyxl
-pillow
-pandas
-numpy
+streamlit==1.53.0
+plotly==6.5.2
+matplotlib==3.10.8
+openpyxl==3.1.5
+pillow==12.1.0
+pandas==2.3.3
+numpy==2.4.1
 py3dbp
 rapidfuzz
 pgeocode
