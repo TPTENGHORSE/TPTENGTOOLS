@@ -185,6 +185,108 @@ st.markdown(
         box-shadow: var(--vtt-shadow);
         margin-top: 0.45rem;
     }
+    .vtt-panel-scroll {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: visible;
+        padding-bottom: 0.35rem;
+    }
+    .vtt-panel--timeline {
+        display: inline-block;
+        min-width: 100%;
+        width: max-content;
+        box-sizing: border-box;
+    }
+    .timeline-table {
+        border-collapse: separate !important;
+        border-spacing: 0;
+    }
+    .timeline-table th,
+    .timeline-table td {
+        box-sizing: border-box;
+    }
+    .timeline-table tr > :nth-child(1) {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+    }
+    .timeline-table tr > :nth-child(2) {
+        position: sticky;
+        left: 200px;
+        z-index: 5;
+    }
+    .timeline-table tr > :nth-child(3) {
+        position: sticky;
+        left: 250px;
+        z-index: 5;
+    }
+    .timeline-table tr > :nth-child(4) {
+        position: sticky;
+        left: 300px;
+        z-index: 5;
+        box-shadow: 10px 0 18px rgba(16, 40, 69, 0.08);
+    }
+    .timeline-table thead th:nth-child(-n+4) {
+        z-index: 6;
+    }
+    .timeline-table thead tr:first-child th:nth-child(-n+4) {
+        background: var(--vtt-surface) !important;
+    }
+    .timeline-table thead tr:nth-child(2) th:nth-child(1) {
+        background: #f5f5f5 !important;
+    }
+    .timeline-table thead tr:nth-child(2) th:nth-child(2),
+    .timeline-table thead tr:nth-child(2) th:nth-child(3),
+    .timeline-table thead tr:nth-child(2) th:nth-child(4) {
+        background: #f5f5f5 !important;
+    }
+    .timeline-table tbody td:nth-child(1) {
+        background: #f5f5f5 !important;
+    }
+    .timeline-table tbody td:nth-child(2),
+    .timeline-table tbody td:nth-child(3),
+    .timeline-table tbody td:nth-child(4) {
+        background: var(--vtt-surface) !important;
+    }
+    .timeline-table tbody td:nth-child(1),
+    .timeline-table tbody td:nth-child(2),
+    .timeline-table tbody td:nth-child(3),
+    .timeline-table tbody td:nth-child(4) {
+        background-clip: padding-box;
+    }
+    .summary-table {
+        border-collapse: separate !important;
+        border-spacing: 0;
+    }
+    .summary-table th,
+    .summary-table td {
+        box-sizing: border-box;
+    }
+    .summary-table tr > :nth-child(1) {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+    }
+    .summary-table tr > :nth-child(2) {
+        position: sticky;
+        left: 200px;
+        z-index: 5;
+        box-shadow: 10px 0 18px rgba(16, 40, 69, 0.08);
+    }
+    .summary-table thead th:nth-child(-n+2) {
+        z-index: 6;
+        background: var(--vtt-surface) !important;
+    }
+    .summary-table tbody td:nth-child(1) {
+        background: #f5f5f5 !important;
+    }
+    .summary-table tbody td:nth-child(2) {
+        background: var(--vtt-surface) !important;
+    }
+    .summary-table tbody td:nth-child(1),
+    .summary-table tbody td:nth-child(2) {
+        background-clip: padding-box;
+    }
     .vtt-panel__title,
     .vtt-section-title {
         color: var(--vtt-primary-strong);
@@ -1444,9 +1546,11 @@ table_html += "</tbody></table>"
 table_html_visible += "</tbody></table>"
 # Render visible table as before, but with a distinct id to avoid capture conflicts
 wrapped_html_visible = (
-    "<div class='vtt-panel'>"
+    "<div class='vtt-panel-scroll'>"
+    "<div class='vtt-panel vtt-panel--timeline'>"
     "<div class='vtt-panel__title'>Timeline Overview</div>"
-    f"<div id='timeline_capture_table' style='display:inline-block'>{table_html_visible}</div>"
+    f"<div id='timeline_capture_table' style='display:inline-block; width:max-content; min-width:100%'>{table_html_visible}</div>"
+    "</div>"
     "</div>"
 )
 st.markdown(wrapped_html_visible, unsafe_allow_html=True)
@@ -1704,19 +1808,16 @@ try:
     if max_days_kpi > 0:
         summary_ui_label_width = 200
         summary_ui_value_width = 50
-        summary_ui_spacer_col_width = 50
-        kpi_gantt_html = "<div class='vtt-panel' style='margin-top:16px;'><div class='vtt-panel__title'>VTT SUMMARY</div>"
+        kpi_gantt_html = "<div class='vtt-panel-scroll' style='margin-top:16px;'><div class='vtt-panel vtt-panel--timeline'><div class='vtt-panel__title'>VTT SUMMARY</div>"
         # Usar mismo tamaño base de fuente que la tabla superior
-        kpi_gantt_html += "<table style='border-collapse:collapse; width:auto; font-size:12px;'>"
+        kpi_gantt_html += "<div style='display:inline-block; width:max-content; min-width:100%'><table class='summary-table' style='border-collapse:collapse; width:auto; font-size:12px;'>"
 
         # Cabecero de semanas alineado con la zona de tiempos (cálculo local)
         kpi_gantt_html += "<thead><tr>"
-        # 2 columnas fijas para etiqueta y valor, mas 2 separadores invisibles que replican Day+ y Final Day
+        # 2 columnas fijas para etiqueta y valor
         kpi_gantt_html += (
             f"<th style='border:none; min-width:{summary_ui_label_width}px; width:{summary_ui_label_width}px; max-width:{summary_ui_label_width}px; padding:0;'></th>"
             f"<th style='border:none; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; padding:0;'></th>"
-            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
-            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
         )
         current_week = None
         span_count = 0
@@ -1738,12 +1839,10 @@ try:
 
         # Fila de días (M,T,W,...) también alineada
         kpi_gantt_html += "<tr>"
-        # 2 columnas vacías equivalentes a etiqueta y valor, mas 2 separadores invisibles para alinear el inicio del calendario
+        # 2 columnas vacías equivalentes a etiqueta y valor
         kpi_gantt_html += (
             f"<th style='border:none; min-width:{summary_ui_label_width}px; width:{summary_ui_label_width}px; max-width:{summary_ui_label_width}px; padding:0;'></th>"
             f"<th style='border:none; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; padding:0;'></th>"
-            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
-            f"<th style='border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; padding:0;'></th>"
         )
         for d_day in timeline_days:
             if d_day.weekday() in (5, 6):
@@ -1755,13 +1854,13 @@ try:
             kpi_gantt_html += f"<th style='{th_style}'><span class='vtt-vertical-text' style='display:flex;align-items:center;justify-content:center;height:100%;'>{label_day}</span></th>"
         kpi_gantt_html += "</tr></thead><tbody>"
 
-        total_kpi_columns = 4 + len(timeline_days)
+        total_kpi_columns = 2 + len(timeline_days)
 
         for label_txt, val, start_day in kpi_rows:
             if val is None and start_day is None:
                 kpi_gantt_html += (
                     "<tr>"
-                    f"<td colspan='{total_kpi_columns}' style='padding:6px 4px 6px 2cm; border:1px solid #1f4e79; text-align:left; font-weight:bold; color:#ffffff; background:#1f4e79; min-width:200px; white-space:nowrap; font-size:18px;'>"
+                    f"<td colspan='{total_kpi_columns}' style='padding:6px 4px 6px 2cm; border:1px solid #d7e2f0; text-align:left; font-weight:bold; color:#102845; background:#eaf2fb; min-width:200px; white-space:nowrap; font-size:18px;'>"
                     f"{label_txt}</td>"
                     "</tr>"
                 )
@@ -1778,11 +1877,6 @@ try:
             kpi_gantt_html += (
                 f"<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; height:15px; line-height:15px; font-size:14px;'>"
                 f"{display_val}</td>"
-            )
-            # Separadores invisibles para mantener alineado el inicio de semanas con Day+ y Final Day de la tabla superior
-            kpi_gantt_html += (
-                f"<td style='padding:0; border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; height:15px; background:transparent;'></td>"
-                f"<td style='padding:0; border:none; min-width:{summary_ui_spacer_col_width}px; width:{summary_ui_spacer_col_width}px; height:15px; background:transparent;'></td>"
             )
             # Barras de días (Gantt secuencial) alineadas con timeline_days
             for idx, _day in enumerate(timeline_days, start=1):
@@ -1805,7 +1899,7 @@ try:
                     f"<td style='border:1px solid #f0f0f0; width:20px; height:15px; padding:0 1px; background:{bg}; text-align:center; vertical-align:middle;'>{content}</td>"
                 )
             kpi_gantt_html += "</tr>"
-        kpi_gantt_html += "</tbody></table></div>"
+        kpi_gantt_html += "</tbody></table></div></div></div>"
         st.markdown(kpi_gantt_html, unsafe_allow_html=True)
 except Exception:
     # Si algo falla, no romper la app; simplemente no mostrar el gantt de KPIs
@@ -2179,7 +2273,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     summary_fixed_widths = [label_w, metric_w]
     summary_grid_left = table_left + sum(summary_fixed_widths)
 
-    x = summary_grid_left
+    x = grid_left
     for week, span in week_spans:
         _draw_cell(draw, (x, y, x + span * day_w, y + week_h), f'W{week}', fill='#fffbe6', font=font_bold, align='center')
         x += span * day_w
@@ -2224,7 +2318,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
     draw.text((margin, y), 'VTT SUMMARY', font=font_title, fill='#111111')
     y += title_h
 
-    x = grid_left
+    x = summary_grid_left
     for week, span in week_spans:
         _draw_cell(draw, (x, y, x + span * day_w, y + week_h), f'W{week}', fill='#fffbe6', font=font_bold, align='center')
         x += span * day_w
@@ -2246,10 +2340,10 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
                 draw,
                 (table_left, y, table_left + sum(summary_fixed_widths) + day_w * len(timeline_days), y + row_h),
                 label,
-                fill='#1f4e79',
-                outline='#1f4e79',
+                fill='#eaf2fb',
+                outline='#d7e2f0',
                 font=font_bold,
-                text_fill='#ffffff',
+                text_fill='#102845',
                 align='left',
             )
             y += row_h
@@ -2584,17 +2678,32 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
     summary_start_col = 3
 
+    spans = _compute_week_spans(timeline_days)
+
+    c = summary_start_col
+    for week, span in spans:
+        ws.merge_cells(start_row=rr, start_column=c, end_row=rr, end_column=c + span - 1)
+        week_cell = ws.cell(row=rr, column=c, value=f'W{week}')
+        week_cell.fill = weekfill
+        week_cell.font = Font(bold=True)
+        week_cell.border = border
+        week_cell.alignment = Alignment(horizontal='center')
+        for cc in range(c, c + span):
+            ws.cell(row=rr, column=cc).border = border
+        c += span
+    rr += 1
+
     for label_txt, val, start_day in kpi_rows:
         if label_txt == 'OVS SAP STAGES' and val is None and start_day is None:
             ws.merge_cells(start_row=rr, start_column=1, end_row=rr, end_column=summary_start_col + len(timeline_days) - 1)
             ovs_cell = ws.cell(row=rr, column=1, value=label_txt)
-            ovs_cell.font = Font(bold=True, color='FFFFFF')
-            ovs_cell.fill = PatternFill(fill_type='solid', fgColor='1F4E79')
+            ovs_cell.font = Font(bold=True, color='102845')
+            ovs_cell.fill = PatternFill(fill_type='solid', fgColor='EAF2FB')
             ovs_cell.border = border
             ovs_cell.alignment = Alignment(horizontal='left')
             for ci in range(1, summary_start_col + len(timeline_days)):
                 ws.cell(row=rr, column=ci).border = border
-                ws.cell(row=rr, column=ci).fill = PatternFill(fill_type='solid', fgColor='1F4E79')
+                ws.cell(row=rr, column=ci).fill = PatternFill(fill_type='solid', fgColor='EAF2FB')
             rr += 1
             continue
 
