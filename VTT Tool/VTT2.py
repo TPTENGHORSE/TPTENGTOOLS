@@ -75,6 +75,12 @@ def _due_date_day_plus_value(row, df_vtt):
         if row is None:
             return 7
 
+        if '14 Rounding' in df_vtt.columns and '15 Due Date' in df_vtt.columns:
+            rounding_val = _coerce_to_int(row.get('14 Rounding'))
+            due_date_val = _coerce_to_int(row.get('15 Due Date'))
+            if due_date_val >= rounding_val > 0:
+                return due_date_val - rounding_val
+
         row_id = str(row.get('ID', '')).strip().upper() if 'ID' in df_vtt.columns else ''
         row_pol = str(row.get('POL', '')).strip().upper() if 'POL' in df_vtt.columns else ''
         row_pod = str(row.get('POD', '')).strip().upper() if 'POD' in df_vtt.columns else ''
@@ -104,6 +110,98 @@ def _format_expiration_date(row, df_vtt):
             return '' if row is None else str(row.get('Expiration Date', ''))
         except Exception:
             return ''
+
+
+def _visible_timeline_step_data(display_index, row, df_vtt):
+    if display_index < 9 or row is None:
+        return None
+
+    if display_index == 9:
+        base_final = 0
+        if '9 ETD> ETA' in df_vtt.columns:
+            base_final = _coerce_to_int(row.get('9 ETD> ETA'))
+        elif '9 ETD>ETA' in df_vtt.columns:
+            base_final = _coerce_to_int(row.get('9 ETD>ETA'))
+
+        flex_1 = _coerce_to_int(row.get('Time for security')) if 'Time for security' in df_vtt.columns else 0
+        flex_2 = _coerce_to_int(row.get('Time for security2 buffer')) if 'Time for security2 buffer' in df_vtt.columns else 0
+        day_plus = flex_1 + flex_2
+        final_day = _coerce_to_int(row.get('11 Days flexibility 2')) if '11 Days flexibility 2' in df_vtt.columns else 0
+        if not final_day:
+            base_flex = _coerce_to_int(row.get('10 Days flexibility 1')) if '10 Days flexibility 1' in df_vtt.columns else 0
+            if base_flex:
+                final_day = base_flex + 1 + flex_2
+
+        segments = []
+        if final_day and day_plus > 0:
+            start_idx = max(1, final_day - day_plus + 1)
+            if flex_1 > 0:
+                segments.append({'start': start_idx, 'end': min(final_day, start_idx + flex_1 - 1), 'fill': '#87ceeb'})
+            green_start = start_idx + max(flex_1, 0)
+            if green_start <= final_day:
+                segments.append({'start': green_start, 'end': final_day, 'fill': '#90ee90'})
+
+        return {
+            'day': str(base_final + 1) if base_final else '-',
+            'day_plus': day_plus,
+            'final_day': final_day,
+            'segments': segments,
+        }
+
+    if display_index == 10:
+        day_plus = _coerce_to_int(row.get('Cust.')) if 'Cust.' in df_vtt.columns else 0
+        final_day = 0
+        if '12 Customs Clearance' in df_vtt.columns:
+            final_day = _coerce_to_int(row.get('12 Customs Clearance'))
+        elif '12 Customs clearence' in df_vtt.columns:
+            final_day = _coerce_to_int(row.get('12 Customs clearence'))
+        previous_final = _coerce_to_int(row.get('11 Days flexibility 2')) if '11 Days flexibility 2' in df_vtt.columns else 0
+        day_value = final_day if day_plus <= 0 and final_day else (previous_final + 1 if previous_final else '-')
+        segments = []
+        if final_day and day_plus > 0:
+            segments.append({'start': max(1, final_day - day_plus + 1), 'end': final_day, 'fill': '#90ee90'})
+        return {'day': str(day_value) if day_value != '-' else '-', 'day_plus': day_plus, 'final_day': final_day, 'segments': segments}
+
+    if display_index == 11:
+        day_plus = _coerce_to_int(row.get('Trpt POD/PFI vers Usine')) if 'Trpt POD/PFI vers Usine' in df_vtt.columns else 0
+        final_day = _coerce_to_int(row.get('13 Transport to Plant')) if '13 Transport to Plant' in df_vtt.columns else 0
+        previous_final = 0
+        if '12 Customs Clearance' in df_vtt.columns:
+            previous_final = _coerce_to_int(row.get('12 Customs Clearance'))
+        elif '12 Customs clearence' in df_vtt.columns:
+            previous_final = _coerce_to_int(row.get('12 Customs clearence'))
+        day_value = previous_final + 1 if previous_final else '-'
+        segments = []
+        if final_day and day_plus > 0:
+            segments.append({'start': max(1, final_day - day_plus + 1), 'end': final_day, 'fill': '#90ee90'})
+        return {'day': str(day_value) if day_value != '-' else '-', 'day_plus': day_plus, 'final_day': final_day, 'segments': segments}
+
+    if display_index == 12:
+        if 'Round.' in df_vtt.columns:
+            day_plus = _coerce_to_int(row.get('Round.'))
+        elif 'Round' in df_vtt.columns:
+            day_plus = _coerce_to_int(row.get('Round'))
+        else:
+            day_plus = 0
+        final_day = _coerce_to_int(row.get('14 Rounding')) if '14 Rounding' in df_vtt.columns else 0
+        previous_final = _coerce_to_int(row.get('13 Transport to Plant')) if '13 Transport to Plant' in df_vtt.columns else 0
+        day_value = final_day if day_plus <= 0 and final_day else (previous_final + 1 if previous_final else '-')
+        segments = []
+        if final_day and day_plus > 0:
+            segments.append({'start': max(1, final_day - day_plus + 1), 'end': final_day, 'fill': '#90ee90'})
+        return {'day': str(day_value) if day_value != '-' else '-', 'day_plus': day_plus, 'final_day': final_day, 'segments': segments}
+
+    if display_index == 13:
+        day_plus = _due_date_day_plus_value(row, df_vtt)
+        final_day = _coerce_to_int(row.get('15 Due Date')) if '15 Due Date' in df_vtt.columns else 0
+        previous_final = _coerce_to_int(row.get('14 Rounding')) if '14 Rounding' in df_vtt.columns else 0
+        day_value = previous_final + 1 if previous_final else '-'
+        segments = []
+        if final_day and day_plus > 0:
+            segments.append({'start': max(1, final_day - day_plus + 1), 'end': final_day, 'fill': '#90ee90'})
+        return {'day': str(day_value) if day_value != '-' else '-', 'day_plus': day_plus, 'final_day': final_day, 'segments': segments}
+
+    return None
 
 
 # Load data from new Excel (VTT DATA.xlsx)
@@ -755,7 +853,29 @@ for i in range(time_rows):
             if fecha_actual is not None and fecha_actual.weekday() in [5, 6]:
                 cell_style += "background-color:#ffd6d6;"
                 cell_style_visible += "background-color:#ffd6d6;"
-        if i == 0:  # 1. Day Customer Order
+        visible_step_data = _visible_timeline_step_data(i, row, df_vtt)
+        if visible_step_data is not None:
+            if j == 0:
+                cell_content = time_labels[i]
+                cell_content_visible = cell_content
+            elif j == 1:
+                cell_content = visible_step_data['day']
+                cell_content_visible = cell_content
+            elif j == 2:
+                cell_content = str(visible_step_data['day_plus']) if visible_step_data['day_plus'] != 0 else "0"
+                cell_content_visible = cell_content
+            elif j == 3:
+                final_day = visible_step_data['final_day']
+                cell_content = str(final_day) if final_day else "-"
+                cell_content_visible = cell_content
+            elif j >= 4:
+                current_day_index = j - 3
+                for segment in visible_step_data['segments']:
+                    if segment['start'] <= current_day_index <= segment['end']:
+                        cell_style += f"background-color:{segment['fill']};"
+                        cell_style_visible += f"background-color:{segment['fill']};"
+                        break
+        elif i == 0:  # 1. Day Customer Order
             if j == 0:
                 cell_content = time_labels[i]
                 cell_content_visible = cell_content
@@ -1133,7 +1253,7 @@ for i in range(time_rows):
                 paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
                 start_idx = max(1, dias_final_day - paint_len + 1)
                 if start_idx <= (j-3) <= dias_final_day:
-                    cell_content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>🚢</span>"
+                    cell_content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>&#128674;</span>"
                     # Azul más claro para Transit Duration (ETD>ETA)
                     cell_style += "background-color:#4a90e2;"
                 cell_content_visible = cell_content
@@ -1250,7 +1370,10 @@ for i in range(time_rows):
                         cell_content = "-"
                     else:
                         try:
-                            cell_content = str(int(float(num_val)) + 1)
+                            if day_plus_val <= 0:
+                                cell_content = str(int(float(num_val)))
+                            else:
+                                cell_content = str(int(float(num_val)) + 1)
                         except Exception:
                             cell_content = "-"
                 else:
@@ -1296,11 +1419,12 @@ for i in range(time_rows):
                 except Exception:
                     dias_final_day = 0
                 day_plus_val = _coerce_to_int(row['Cust.']) if row is not None and 'Cust.' in df_vtt.columns else 0
-                paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
-                start_idx = max(1, dias_final_day - paint_len + 1)
-                if start_idx <= (j-3) <= dias_final_day:
-                    cell_content = ""
-                    cell_style += "background-color:#90ee90;"
+                if day_plus_val > 0:
+                    paint_len = day_plus_val
+                    start_idx = max(1, dias_final_day - paint_len + 1)
+                    if start_idx <= (j-3) <= dias_final_day:
+                        cell_content = ""
+                        cell_style += "background-color:#90ee90;"
                 cell_content_visible = cell_content
                 cell_style_visible = cell_style
         elif source_step == 12:  # 12. Transport to plant
@@ -1376,6 +1500,13 @@ for i in range(time_rows):
             elif j == 1:
                 if row is not None and '13 Transport to Plant' in df_vtt.columns:
                     base_val = row['13 Transport to Plant']
+                    rounding_duration = None
+                    if 'Round.' in df_vtt.columns:
+                        rounding_duration = _coerce_to_int(row['Round.'])
+                    elif 'Round' in df_vtt.columns:
+                        rounding_duration = _coerce_to_int(row['Round'])
+                    else:
+                        rounding_duration = 0
                     num_val = pd.to_numeric(base_val, errors='coerce')
                     if pd.isna(num_val):
                         try:
@@ -1387,7 +1518,10 @@ for i in range(time_rows):
                         cell_content = "-"
                     else:
                         try:
-                            cell_content = str(int(float(num_val)) + 1)
+                            if rounding_duration <= 0:
+                                cell_content = str(int(float(num_val)))
+                            else:
+                                cell_content = str(int(float(num_val)) + 1)
                         except Exception:
                             cell_content = "-"
                 else:
@@ -1434,11 +1568,12 @@ for i in range(time_rows):
                     elif 'Round' in df_vtt.columns:
                         day_plus_val = _coerce_to_int(row['Round'])
                 day_plus_val = day_plus_val if day_plus_val is not None else 0
-                paint_len = day_plus_val if (day_plus_val and day_plus_val > 0) else 1
-                start_idx = max(1, dias_final_day - paint_len + 1)
-                if start_idx <= (j-3) <= dias_final_day:
-                    cell_content = ""
-                    cell_style += "background-color:#90ee90;"
+                if day_plus_val > 0:
+                    paint_len = day_plus_val
+                    start_idx = max(1, dias_final_day - paint_len + 1)
+                    if start_idx <= (j-3) <= dias_final_day:
+                        cell_content = ""
+                        cell_style += "background-color:#90ee90;"
                 cell_content_visible = cell_content
                 cell_style_visible = cell_style
         elif source_step == 14:  # 14. Due Date
@@ -1957,7 +2092,7 @@ try:
                 if is_active:
                     # Usar azul claro y barco para POL>POD y verde para el resto
                     bg = "#4a90e2" if label_txt == "POL>POD" else "#90ee90"
-                    content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>🚢</span>" if label_txt == "POL>POD" else ""
+                    content = "<span style='color:#ffffff; font-size:12px; line-height:1;'>&#128674;</span>" if label_txt == "POL>POD" else ""
                 else:
                     bg = "#ffffff"
                     content = ""
@@ -2361,24 +2496,28 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         x = table_left
         _draw_cell(draw, (x, y, x + label_w, y + row_h), label, fill='#f5f5f5', font=font_bold)
         x += label_w
-        _draw_cell(draw, (x, y, x + metric_w, y + row_h), _day_value_for_step(index, row, df_vtt), font=font_text, align='center')
+        display_day = _ui_timeline_day_value(index, row, df_vtt)
+        _draw_cell(draw, (x, y, x + metric_w, y + row_h), display_day, font=font_text, align='center')
         x += metric_w
-        day_plus = _day_plus_for_step(index, row, df_vtt)
+        day_plus = _ui_timeline_day_plus(index, row, df_vtt)
         _draw_cell(draw, (x, y, x + metric_w, y + row_h), str(day_plus) if day_plus != 0 else '0', font=font_text, align='center')
         x += metric_w
-        final_day = _final_day_for_step(index, row, df_vtt)
+        final_day = _ui_timeline_final_day(index, row, df_vtt)
         _draw_cell(draw, (x, y, x + final_w, y + row_h), str(final_day) if final_day else '-', font=font_text, align='center')
         x += final_w
 
-        paint_len = day_plus if isinstance(day_plus, int) and day_plus > 0 else 1
-        if index in (0, 1, 5, 6, 7):
-            paint_len = 1
-        start_idx = max(1, final_day - paint_len + 1) if final_day else 0
+        paint_segments = _ui_timeline_paint_segments(index, row, df_vtt)
         for day_index, day in enumerate(timeline_days, start=1):
             fill = '#ffd6d6' if day.weekday() in (5, 6) else '#ffffff'
-            if final_day and start_idx <= day_index <= final_day:
-                fill = '#4a90e2' if index == 8 else '#90ee90'
-            _draw_cell(draw, (x, y, x + day_w, y + row_h), fill=fill)
+            cell_text = ''
+            text_fill = '#111111'
+            for segment in paint_segments:
+                if segment['start'] <= day_index <= segment['end']:
+                    fill = segment['fill']
+                    cell_text = segment.get('text', '')
+                    text_fill = segment.get('text_fill', '#111111')
+                    break
+            _draw_cell(draw, (x, y, x + day_w, y + row_h), cell_text, fill=fill, font=font_small, text_fill=text_fill, align='center')
             x += day_w
         y += row_h
 
@@ -2599,6 +2738,95 @@ def _day_value_for_step(i, row, df_vtt):
         return '-'
 
 
+def _ui_timeline_source_step(display_index):
+    if display_index < 9:
+        return display_index
+    if display_index == 9:
+        return None
+    return display_index + 1
+
+
+def _ui_timeline_day_value(display_index, row, df_vtt):
+    visible_step_data = _visible_timeline_step_data(display_index, row, df_vtt)
+    if visible_step_data is not None:
+        return visible_step_data['day']
+
+    if display_index < 9:
+        return _day_value_for_step(display_index, row, df_vtt)
+    return '-'
+
+
+def _ui_timeline_day_plus(display_index, row, df_vtt):
+    visible_step_data = _visible_timeline_step_data(display_index, row, df_vtt)
+    if visible_step_data is not None:
+        return visible_step_data['day_plus']
+
+    if display_index < 9:
+        return _day_plus_for_step(display_index, row, df_vtt)
+    return 0
+
+
+def _ui_timeline_final_day(display_index, row, df_vtt):
+    visible_step_data = _visible_timeline_step_data(display_index, row, df_vtt)
+    if visible_step_data is not None:
+        return visible_step_data['final_day']
+
+    if display_index < 9:
+        return _final_day_for_step(display_index, row, df_vtt)
+    return 0
+
+
+def _ui_timeline_paint_segments(display_index, row, df_vtt):
+    visible_step_data = _visible_timeline_step_data(display_index, row, df_vtt)
+    if visible_step_data is not None:
+        return visible_step_data['segments']
+
+    final_day = _ui_timeline_final_day(display_index, row, df_vtt)
+    if not final_day:
+        return []
+
+    if display_index in (10, 12):
+        day_plus = _ui_timeline_day_plus(display_index, row, df_vtt)
+        if day_plus <= 0:
+            return []
+
+    if display_index == 9:
+        flex_1 = _coerce_to_int(row['Time for security']) if row is not None and 'Time for security' in df_vtt.columns else 0
+        total_flex = _ui_timeline_day_plus(display_index, row, df_vtt)
+        paint_len = total_flex if total_flex > 0 else 1
+        start_idx = max(1, final_day - paint_len + 1)
+        segments = []
+
+        if flex_1 > 0:
+            flex_1_end = min(final_day, start_idx + flex_1 - 1)
+            segments.append({'start': start_idx, 'end': flex_1_end, 'fill': '#87ceeb'})
+
+        green_start = start_idx + max(flex_1, 0)
+        if green_start <= final_day:
+            segments.append({'start': green_start, 'end': final_day, 'fill': '#90ee90'})
+
+        if not segments:
+            segments.append({'start': start_idx, 'end': final_day, 'fill': '#90ee90'})
+
+        return segments
+
+    day_plus = _ui_timeline_day_plus(display_index, row, df_vtt)
+    paint_len = day_plus if isinstance(day_plus, int) and day_plus > 0 else 1
+    if display_index in (0, 1, 5, 6, 7):
+        paint_len = 1
+
+    start_idx = max(1, final_day - paint_len + 1)
+    segment = {
+        'start': start_idx,
+        'end': final_day,
+        'fill': '#4a90e2' if display_index == 8 else '#90ee90',
+    }
+    if display_index == 8:
+        segment['text'] = '🚢'
+        segment['text_fill'] = '#ffffff'
+    return [segment]
+
+
 def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, headers, timeline_days, include_snapshot_sheet=True):
     wb = Workbook()
     ws = wb.active
@@ -2696,25 +2924,22 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
         ws.cell(row=r+i, column=1).alignment = Alignment(horizontal='left')
 
         # Day
-        day_val = _day_value_for_step(i, row, df_vtt)
+        day_val = _ui_timeline_day_value(i, row, df_vtt)
         ws.cell(row=r+i, column=2, value=day_val).border = border
         ws.cell(row=r+i, column=2).alignment = Alignment(horizontal='center')
 
         # Day+
-        day_plus = _day_plus_for_step(i, row, df_vtt)
-        ws.cell(row=r+i, column=3, value=str(day_plus) if day_plus != 0 else ("0" if i in (3,4,8,9,11,12,13,14,15) else "0" if day_plus==0 else "-")).border = border
+        day_plus = _ui_timeline_day_plus(i, row, df_vtt)
+        ws.cell(row=r+i, column=3, value=str(day_plus) if day_plus != 0 else "0").border = border
         ws.cell(row=r+i, column=3).alignment = Alignment(horizontal='center')
 
         # Final Day
-        fday = _final_day_for_step(i, row, df_vtt)
+        fday = _ui_timeline_final_day(i, row, df_vtt)
         ws.cell(row=r+i, column=4, value=str(fday) if fday != 0 else "-").border = border
         ws.cell(row=r+i, column=4).alignment = Alignment(horizontal='center')
 
         # Paint date cells
-        paint_len = day_plus if (isinstance(day_plus, int) and day_plus > 0) else 1
-        if i in (0,1,5,6,7):
-            paint_len = 1  # Day+ = 0 -> only final day for these steps
-        start_idx = max(1, fday - paint_len + 1) if fday else 0
+        paint_segments = _ui_timeline_paint_segments(i, row, df_vtt)
         for idx, d in enumerate(timeline_days, start=0):
             ci = start_col + idx
             cell = ws.cell(row=r+i, column=ci, value="")
@@ -2722,12 +2947,16 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
             # weekend shading
             if d.weekday() in (5,6):
                 cell.fill = weekendfill
-            # paint range overrides shade
-            if fday and start_idx <= (idx+1) <= fday:
-                if i == 8:
-                    cell.fill = darkbluefill
-                else:
-                    cell.fill = paintfill
+            for segment in paint_segments:
+                if segment['start'] <= (idx + 1) <= segment['end']:
+                    fill = segment['fill']
+                    if fill == '#4a90e2':
+                        cell.fill = darkbluefill
+                    elif fill == '#87ceeb':
+                        cell.fill = _hex_to_fill('#87ceeb')
+                    else:
+                        cell.fill = paintfill
+                    break
 
     # Column widths
     ws.column_dimensions['A'].width = 36

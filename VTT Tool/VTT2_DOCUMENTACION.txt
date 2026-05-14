@@ -310,8 +310,9 @@ Step 15. Due Date
 
 Regla de _due_date_day_plus_value:
 
-- Por defecto devuelve 7.
-- Excepcion especial: si ID = O001, POL = CNSHA y POD = PTLEI, devuelve 5.
+- Si existen 14 Rounding y 15 Due Date, devuelve la diferencia 15 Due Date - 14 Rounding.
+- Si no puede derivarlo desde esas columnas, usa 7 como respaldo.
+- La excepcion historica de O001 queda cubierta por esa misma diferencia de columnas.
 
 8. NOTA SOBRE "16 MANUFACTURING"
 
