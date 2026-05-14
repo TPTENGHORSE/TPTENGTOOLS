@@ -25,6 +25,7 @@ def render_box(label, value):
     </div>
     """
 
+
 def _coerce_to_int(val):
     """Attempt to coerce various cell formats to an integer.
     Handles None/NaN, numeric strings with punctuation, and floats.
@@ -104,13 +105,13 @@ def _format_expiration_date(row, df_vtt):
         except Exception:
             return ''
 
+
 # Load data from new Excel (VTT DATA.xlsx)
 vtt_data_path = os.path.join(os.path.dirname(__file__), "VTT DATA.xlsx")
 df_vtt = pd.read_excel(vtt_data_path)
 
 # --- STREAMLIT INTERFACE ---
 st.set_page_config(layout="wide")
-
 st.markdown(
     """
     <style>
@@ -397,7 +398,6 @@ st.markdown(
     .stButton > button:hover {
         background: linear-gradient(135deg, var(--vtt-primary-strong) 0%, var(--vtt-primary) 100%) !important;
     }
-    /* vertical text utility for date headers */
     .vtt-vertical-text {
         display: inline-block;
         writing-mode: vertical-rl;
@@ -1238,6 +1238,7 @@ for i in range(time_rows):
             elif j == 1:
                 if row is not None and '11 Days flexibility 2' in df_vtt.columns:
                     base_val = row['11 Days flexibility 2']
+                    day_plus_val = _coerce_to_int(row['Cust.']) if 'Cust.' in df_vtt.columns else 0
                     num_val = pd.to_numeric(base_val, errors='coerce')
                     if pd.isna(num_val):
                         try:
