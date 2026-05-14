@@ -16,6 +16,11 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from PIL import Image as PILImage, ImageDraw, ImageFont
 
+try:
+    from matplotlib import font_manager as matplotlib_font_manager
+except Exception:
+    matplotlib_font_manager = None
+
 
 def render_box(label, value):
     return f"""
@@ -110,6 +115,57 @@ def _format_expiration_date(row, df_vtt):
             return '' if row is None else str(row.get('Expiration Date', ''))
         except Exception:
             return ''
+
+
+def _load_snapshot_font_impl(size, bold=False):
+    candidates = []
+    if os.name == 'nt':
+        font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+        candidates.extend([
+            os.path.join(font_dir, 'arialbd.ttf' if bold else 'arial.ttf'),
+            os.path.join(font_dir, 'calibrib.ttf' if bold else 'calibri.ttf'),
+        ])
+
+    repo_font_dir = os.path.join(os.path.dirname(__file__), 'fonts')
+    if os.path.isdir(repo_font_dir):
+        candidates.extend([
+            os.path.join(repo_font_dir, 'Arial-Bold.ttf' if bold else 'Arial.ttf'),
+            os.path.join(repo_font_dir, 'DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf'),
+            os.path.join(repo_font_dir, 'LiberationSans-Bold.ttf' if bold else 'LiberationSans-Regular.ttf'),
+        ])
+
+    candidates.extend([
+        'arialbd.ttf' if bold else 'arial.ttf',
+        'DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf',
+        'LiberationSans-Bold.ttf' if bold else 'LiberationSans-Regular.ttf',
+        'NotoSans-Bold.ttf' if bold else 'NotoSans-Regular.ttf',
+    ])
+
+    if matplotlib_font_manager is not None:
+        target_weight = 'bold' if bold else 'normal'
+        for family in ['Arial', 'Calibri', 'DejaVu Sans', 'Liberation Sans', 'Noto Sans', 'sans-serif']:
+            try:
+                font_path = matplotlib_font_manager.findfont(
+                    matplotlib_font_manager.FontProperties(family=[family], weight=target_weight),
+                    fallback_to_default=True,
+                )
+                if font_path and os.path.exists(font_path):
+                    candidates.append(font_path)
+            except Exception:
+                continue
+
+    seen = set()
+    for candidate in candidates:
+        normalized = os.path.normcase(str(candidate))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            return ImageFont.truetype(candidate, size)
+        except Exception:
+            continue
+
+    return ImageFont.load_default()
 
 
 def _visible_timeline_step_data(display_index, row, df_vtt):
@@ -2230,20 +2286,7 @@ def _compute_week_spans(days):
 
 
     def _load_snapshot_font(size, bold=False):
-        candidates = []
-        if os.name == 'nt':
-            font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
-            candidates.extend([
-                os.path.join(font_dir, 'arialbd.ttf' if bold else 'arial.ttf'),
-                os.path.join(font_dir, 'calibrib.ttf' if bold else 'calibri.ttf'),
-            ])
-        candidates.extend(['arialbd.ttf' if bold else 'arial.ttf', 'DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf'])
-        for candidate in candidates:
-            try:
-                return ImageFont.truetype(candidate, size)
-            except Exception:
-                continue
-        return ImageFont.load_default()
+        return _load_snapshot_font_impl(size, bold=bold)
 
 
     def _text_size(draw, text, font):
