@@ -2180,8 +2180,9 @@ try:
             )
             # Valor numérico (columna Day)
             display_val = str(val)  # Mostrar siempre el valor, incluso si es 0 o negativo, para depuración
+            value_font_weight = "font-weight:bold;" if label_txt in ("CUSTOMER LEADTIME (CLT)", "Transportation Duration") else ""
             kpi_gantt_html += (
-                f"<td style='padding:1px 4px; border:1px solid #eee; text-align:center; min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; height:15px; line-height:15px; font-size:14px;'>"
+                f"<td style='padding:1px 4px; border:1px solid #eee; text-align:center; {value_font_weight} min-width:{summary_ui_value_width}px; width:{summary_ui_value_width}px; max-width:{summary_ui_value_width}px; height:15px; line-height:15px; font-size:14px;'>"
                 f"{display_val}</td>"
             )
             # Barras de días (Gantt secuencial) alineadas con timeline_days
