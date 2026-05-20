@@ -340,13 +340,15 @@ VTT SUMMARY:
 
 9.2. Transportation Duration
 
-- Formula: Final Day de 14 Rounding - valor Day de 5.1 Transport ILN to POL + 1.
-- Barra: comienza donde empieza el step 5.
+- Formula: Final Day de 14 Rounding - valor Day de 4 Pack. prep. & load + 1.
+- En datos, eso equivale a 14 Rounding - 4.1 Packaging preparation/loading + 1.
+- Barra: empieza en 4.1 Packaging preparation/loading.
 
 9.3. SUPPLIER>POL
 
-- Formula: Final Day de 8 ETD - valor Day de 3 First Receipt Days + 1.
-- Barra: empieza en 3 First Receipt Days.
+- Formula: Day de 9 Transit Duration (ETD>ETA) - Day de 4 Pack. prep. & load.
+- En datos, eso equivale a 8 ETD - 4.1 Packaging preparation/loading.
+- Barra: empieza en 4.1 Packaging preparation/loading.
 
 9.4. POL>POD
 

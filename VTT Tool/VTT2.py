@@ -2060,19 +2060,19 @@ def _build_kpi_rows(row, df_vtt):
         pod_plant = None
 
     try:
-        final_day_8 = _final_day_for_step(7, row, df_vtt)
-        day_3 = _coerce_to_int(row['3 First Receipt Days']) if (row is not None and '3 First Receipt Days' in df_vtt.columns) else 0
-        kpi_sup_pol = final_day_8 - day_3 + 1
+        transit_day = _coerce_to_int(row['8 ETD']) if (row is not None and '8 ETD' in df_vtt.columns) else 0
+        pack_day = _coerce_to_int(row['4.1 Packaging préparation & loading']) if (row is not None and '4.1 Packaging préparation & loading' in df_vtt.columns) else 0
+        kpi_sup_pol = transit_day - pack_day
     except Exception:
-        day_3 = 0
+        pack_day = 0
         kpi_sup_pol = 0
 
     kpi_pol_pod = _coerce_to_int(total_tt) if total_tt is not None and not pd.isna(total_tt) else 0
     kpi_pod_det = _coerce_to_int(pod_det) if pod_det is not None else 0
     kpi_pod_plant = _coerce_to_int(pod_plant) if pod_plant is not None else 0
 
-    start_sup = day_3 if day_3 > 0 else 0
-    start_pol_pod = max(1, start_sup + kpi_sup_pol - 1) if (start_sup and kpi_sup_pol > 0) else 0
+    start_sup = pack_day if pack_day > 0 else 0
+    start_pol_pod = start_sup + kpi_sup_pol if (start_sup and kpi_sup_pol > 0) else 0
     start_pod_det = start_pol_pod + kpi_pol_pod if (start_pol_pod and kpi_pol_pod > 0) else 0
     start_pod_plant = start_pod_det + kpi_pod_det if (start_pod_det and kpi_pod_det > 0) else 0
 
@@ -2085,15 +2085,18 @@ def _build_kpi_rows(row, df_vtt):
 
     try:
         final_day_14 = _final_day_for_step(13, row, df_vtt)
-        day_5 = _coerce_to_int(row['5.1 Transport ILN to POL']) if (row is not None and '5.1 Transport ILN to POL' in df_vtt.columns) else 0
-        transportation_duration = final_day_14 - day_5 + 1
+        pack_day = _coerce_to_int(row['4.1 Packaging préparation & loading']) if (row is not None and '4.1 Packaging préparation & loading' in df_vtt.columns) else 0
+        transportation_duration = final_day_14 - pack_day + 1
     except Exception:
+        pack_day = 0
         transportation_duration = 0
+
+    start_transportation = pack_day if pack_day > 0 else 0
 
     return [
         ("CUSTOMER LEADTIME (CLT)", customer_leadtime, _step_start_index(0, row, df_vtt)),
         ("OVS SAP STAGES", None, None),
-        ("Transportation Duration", transportation_duration, _step_start_index(4, row, df_vtt)),
+        ("Transportation Duration", transportation_duration, start_transportation),
         ("SUPPLIER>POL", kpi_sup_pol, start_sup),
         ("POL>POD", kpi_pol_pod, start_pol_pod),
         ("POD DETENTION", kpi_pod_det, start_pod_det),
