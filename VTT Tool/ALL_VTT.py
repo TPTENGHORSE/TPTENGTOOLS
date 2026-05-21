@@ -15,7 +15,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 TIME_LABELS = [
     "1. Day Customer Order",
-    "2. Day ILN/FF Order",
+    "2. Day ILN/Supplier Order",
     "3. First Receipt Days",
     "4. Pack. prep. & load",
     "5. Transport to POL",

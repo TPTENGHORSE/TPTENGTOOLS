@@ -213,7 +213,7 @@ Step 1. Day Customer Order
 - Final Day: columna 1 Day Customer Order.
 - Pintado: solo el dia final.
 
-Step 2. Day ILN/FF Order
+Step 2. Day ILN/Supplier Order
 
 - Day: columna 2 Day ILN Order.
 - Day+: fijo en 0.
