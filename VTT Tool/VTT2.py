@@ -2649,6 +2649,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
             x += day_w
         y += row_h
 
+
     if row is not None and 'Safety stock' in df_vtt.columns:
         y += section_gap
         safety_stock_label = 'Customer Safety STOCK'
@@ -2678,6 +2679,40 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         value_x = badge_x1 + (badge_width - value_width) // 2
         value_y = badge_y1 + (badge_height - value_height) // 2 - s(1)
         draw.text((value_x, value_y), safety_stock_value, font=font_heading, fill='#102845')
+
+    # --- Watermark: TPT Engineering Dtp ---
+    watermark_text = "TPT Engineering Dtp"
+    # Create a transparent overlay for watermark
+    watermark_overlay = PILImage.new('RGBA', image.size, (255, 255, 255, 0))
+    watermark_draw = ImageDraw.Draw(watermark_overlay)
+    # Use a large font for watermark
+    try:
+        watermark_font = _load_snapshot_font(fs(60), bold=True)
+    except Exception:
+        watermark_font = font_title
+    # Calculate text size (compatible with Pillow >=7)
+    try:
+        text_width, text_height = watermark_font.getsize(watermark_text)
+    except AttributeError:
+        # For newer Pillow versions, use getbbox
+        bbox = watermark_font.getbbox(watermark_text)
+        text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    # Position: center
+    center_x = (image.width - text_width) // 2
+    center_y = (image.height - text_height) // 2
+    # Draw rotated watermark (diagonal)
+    # Create a separate image for rotated text
+    txt_img = PILImage.new('RGBA', (text_width, text_height), (255, 255, 255, 0))
+    txt_draw = ImageDraw.Draw(txt_img)
+    txt_draw.text((0, 0), watermark_text, font=watermark_font, fill=(180, 180, 180, 70))
+    rotated_txt = txt_img.rotate(-30, expand=1)
+    # Paste rotated text onto overlay
+    overlay_x = (image.width - rotated_txt.width) // 2
+    overlay_y = (image.height - rotated_txt.height) // 2
+    watermark_overlay.paste(rotated_txt, (overlay_x, overlay_y), rotated_txt)
+    # Merge overlay with main image
+    image = PILImage.alpha_composite(image.convert('RGBA'), watermark_overlay)
+    image = image.convert('RGB')
 
     return image
 
