@@ -5,6 +5,8 @@ import unicodedata
 from datetime import datetime
 import pandas as pd
 from typing import Iterable, Optional, Tuple
+from openpyxl.styles import PatternFill
+from openpyxl.utils import get_column_letter
 try:
     from rapidfuzz import process as rf_process, fuzz as rf_fuzz  # type: ignore
 except Exception:
@@ -187,8 +189,180 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             df_city_aliases = pd.read_excel(data_file, sheet_name="CITY_ALIASES")
         except Exception:
             df_city_aliases = pd.DataFrame()
+        # Packaging codes reference sheet
+        try:
+            df_packaging = pd.read_excel(data_file, sheet_name="PACKAGING")
+        except Exception:
+            df_packaging = pd.DataFrame()
+        # Optional VTT table used by VTT2.py for POL/POD transit time lookups
+        try:
+            vtt_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "VTT Tool", "VTT DATA.xlsx")
+            df_vtt_routes = pd.read_excel(vtt_data_path)
+        except Exception:
+            df_vtt_routes = pd.DataFrame()
     except PermissionError as e:
         raise PermissionError(f"No se pudo leer QUOTATION TOOL DATA (bloqueado/abierto): {data_file}") from e
+
+    # Default packaging code when input is missing or not found in PACKAGING sheet
+    DEFAULT_PACKAGING_CODE = "CAR-S*2466"
+
+    def resolve_packaging_code(raw_code: str | None) -> str:
+        """Return the validated packaging code from PACKAGING sheet, or DEFAULT_PACKAGING_CODE."""
+        code = str(raw_code or "").strip()
+        if not code or code.upper() in ("", "NAN", "NONE", "NULL", "-"):
+            return DEFAULT_PACKAGING_CODE
+        if df_packaging is None or df_packaging.empty:
+            return code
+        valid_codes = df_packaging["Packaging Code"].astype(str).str.strip()
+        if code in valid_codes.values:
+            return code
+        # Case-insensitive match
+        match = valid_codes[valid_codes.str.upper() == code.upper()]
+        if not match.empty:
+            return str(match.iloc[0])
+        # Not found in database -> use default
+        return DEFAULT_PACKAGING_CODE
+
+    def lookup_packaging_data(pn: str, raw_pack_code: str | None, resolved_pack_code: str) -> dict:
+        """Lookup PACKAGING data with priority:
+        1) Reference (PN) for Part Weight
+        2) Packaging Code from input
+        3) Default packaging code when input code has no match
+        """
+        result = {
+            "pkg_volume_m3": None,
+            "pkg_snp": None,
+            "pkg_length_mm": None,
+            "pkg_width_mm": None,
+            "pkg_height_mm": None,
+            "pkg_weight_part": None,
+            "pkg_weight_empty": None,
+            "pkg_weight_full": None,
+            "pkg_debug": "",
+        }
+        if df_packaging is None or df_packaging.empty:
+            result["pkg_debug"] = "PACKAGING no disponible"
+            return result
+        try:
+            pn_u = str(pn or "").strip().upper()
+            raw_pc_u = str(raw_pack_code or "").strip().upper()
+            res_pc_u = str(resolved_pack_code or "").strip().upper()
+            ref_col = df_packaging["Reference"].astype(str).str.strip().str.upper()
+            pcode_col = df_packaging["Packaging Code"].astype(str).str.strip().str.upper()
+
+            row = None
+            # 1) Priority for Weight/part and base packaging data: match by Reference (PN)
+            m_ref = df_packaging[ref_col == pn_u]
+            if not m_ref.empty:
+                row = m_ref.iloc[0]
+                result["pkg_debug"] = "Packaging: Weight/part por Reference (PN)"
+            else:
+                # 2) Try input packaging code
+                if raw_pc_u and raw_pc_u not in ("NAN", "NONE", "NULL", "-"):
+                    m_raw = df_packaging[pcode_col == raw_pc_u]
+                    if not m_raw.empty:
+                        row = m_raw.iloc[0]
+                        result["pkg_debug"] = "Packaging: Weight/part por Packaging Code input"
+                # 3) If input code does not match, use resolved/default packaging code
+                if row is None and res_pc_u:
+                    m_res = df_packaging[pcode_col == res_pc_u]
+                    if not m_res.empty:
+                        row = m_res.iloc[0]
+                        if raw_pc_u and raw_pc_u != res_pc_u:
+                            result["pkg_debug"] = "Packaging: sin match input; usando Packaging Code default"
+                        else:
+                            result["pkg_debug"] = "Packaging: Weight/part por Packaging Code"
+
+            if row is None:
+                result["pkg_debug"] = "Packaging: sin match en Reference ni Packaging Code"
+                return result
+
+            h = pd.to_numeric(row.get("Height (mm)"), errors="coerce")
+            w = pd.to_numeric(row.get("Width (mm)"), errors="coerce")
+            l = pd.to_numeric(row.get("Lenght (mm)"), errors="coerce")
+            part_w = pd.to_numeric(row.get("Part Weight (kg)"), errors="coerce")
+            empty_w = pd.to_numeric(row.get("Weight EMPTY (kg)"), errors="coerce")
+            snp = pd.to_numeric(row.get("SNP / Pack (PN / Packaging)"), errors="coerce")
+            if pd.notna(h) and pd.notna(w) and pd.notna(l):
+                result["pkg_volume_m3"] = round(h * w * l / 1_000_000_000, 6)
+                result["pkg_length_mm"] = float(l)
+                result["pkg_width_mm"] = float(w)
+                result["pkg_height_mm"] = float(h)
+            result["pkg_snp"] = float(snp) if pd.notna(snp) else None
+            result["pkg_weight_part"] = float(part_w) if pd.notna(part_w) else None
+            result["pkg_weight_empty"] = float(empty_w) if pd.notna(empty_w) else None
+            if pd.notna(empty_w) and pd.notna(part_w) and pd.notna(snp):
+                result["pkg_weight_full"] = round(float(empty_w) + float(part_w) * float(snp), 3)
+        except Exception:
+            pass
+        return result
+
+    # Empaquetado por tipo de transporte (lógica basada en Empower3D, sin stackability manual)
+    TRANSPORT_OPERATIVE_DIMS = {
+        "OVERSEAS": (12032, 2352, 2550),      # Container 40 HC
+        "INLAND": (13620, 2480, 2900),        # Mega Trailer 90m3
+    }
+    TRANSPORT_MAX_WEIGHT = {
+        "OVERSEAS": 24750.0,                  # kg
+        "INLAND": 25000.0,                    # kg
+    }
+
+    def _max_packs_by_volume(container_dim: tuple[int, int, int], box_dim: tuple[float, float, float]) -> int:
+        """Best-fit quantity by volume using two planar rotations, unlimited stack up to container height."""
+        Lc, Wc, Hc = container_dim
+        l1, w1, h = box_dim
+        if l1 <= 0 or w1 <= 0 or h <= 0:
+            return 0
+        l2, w2 = w1, l1
+        nh = int(Hc // h)
+        if nh <= 0:
+            return 0
+
+        # Option 1: main orientation (l1, w1)
+        nl1 = int(Lc // l1)
+        nw1 = int(Wc // w1)
+        sw = Wc - (nw1 * w1)
+        sl = Lc - (nl1 * l1)
+        nl2 = nl1
+        nw2 = int(sw // w2) if sw >= w2 else 0
+        nl3 = int(sl // l2) if sl >= l2 else 0
+        nw3 = nw1
+        nl4 = int(sl // l2) if sl >= l2 else 0
+        nw4 = int(sw // w2) if sw >= w2 else 0
+        total1 = (nl1 * nw1 + nl2 * nw2 + nl3 * nw3 + nl4 * nw4) * nh
+
+        # Option 2: swapped main orientation (w1, l1)
+        nl1b = int(Lc // w1)
+        nw1b = int(Wc // l1)
+        swb = Wc - (nw1b * l1)
+        slb = Lc - (nl1b * w1)
+        nl2b = nl1b
+        nw2b = int(swb // w2) if swb >= w2 else 0
+        nl3b = int(slb // l2) if slb >= l2 else 0
+        nw3b = nw1b
+        nl4b = int(slb // l2) if slb >= l2 else 0
+        nw4b = int(swb // w2) if swb >= w2 else 0
+        total2 = (nl1b * nw1b + nl2b * nw2b + nl3b * nw3b + nl4b * nw4b) * nh
+
+        return int(max(total1, total2))
+
+    def calc_pack_per_container(flow_type: str, pkg: dict) -> int | None:
+        flow_u = str(flow_type or "").strip().upper()
+        if flow_u not in TRANSPORT_OPERATIVE_DIMS:
+            return None
+        l = pkg.get("pkg_length_mm")
+        w = pkg.get("pkg_width_mm")
+        h = pkg.get("pkg_height_mm")
+        if l is None or w is None or h is None:
+            return None
+        by_volume = _max_packs_by_volume(TRANSPORT_OPERATIVE_DIMS[flow_u], (float(l), float(w), float(h)))
+        if by_volume <= 0:
+            return 0
+        wf = pkg.get("pkg_weight_full")
+        if wf is None or float(wf) <= 0:
+            return int(by_volume)
+        by_weight = int(TRANSPORT_MAX_WEIGHT[flow_u] // float(wf))
+        return int(min(by_volume, by_weight))
 
     # Helpers
     def norm(s):
@@ -784,6 +958,32 @@ def build_output(input_df: pd.DataFrame, out_path: str):
     def get_ocean_rate_and_tt(pol: str, pod: str):
         rate = None
         tt_days = None
+        if pol and pod and not df_vtt_routes.empty:
+            try:
+                pol_vtt = _resolve_col(df_vtt_routes, ["POL"], ["pol"])
+                pod_vtt = _resolve_col(df_vtt_routes, ["POD"], ["pod"])
+                tt_vtt = _resolve_col(df_vtt_routes, ["Transit time", "Transit Time"], ["transit time", "transit"])
+                sec_vtt = _resolve_col(df_vtt_routes, ["Time for security"], ["time for security", "security"])
+                if pol_vtt and pod_vtt and tt_vtt:
+                    mv = df_vtt_routes[
+                        (df_vtt_routes[pol_vtt].astype(str).str.upper().str.strip() == str(pol).upper().strip()) &
+                        (df_vtt_routes[pod_vtt].astype(str).str.upper().str.strip() == str(pod).upper().strip())
+                    ]
+                    if not mv.empty:
+                        try:
+                            tvals = pd.to_numeric(mv[tt_vtt], errors="coerce")
+                            if sec_vtt and sec_vtt in mv.columns:
+                                svals = pd.to_numeric(mv[sec_vtt], errors="coerce")
+                            else:
+                                svals = pd.Series([float("nan")] * len(mv), index=mv.index)
+                            totals = tvals.fillna(0) + svals.fillna(0)
+                            valid = tvals.notna() | svals.notna()
+                            vv = totals[valid]
+                            tt_days = float(vv.min()) if not vv.empty else None
+                        except Exception:
+                            tt_days = None
+            except Exception:
+                pass
         if pol and pod and not df_mp.empty:
             try:
                 pol_c = pol_col_mp or "POL"
@@ -801,17 +1001,18 @@ def build_output(input_df: pd.DataFrame, out_path: str):
                             rate = float(m.iloc[0].get(rate_col)) if pd.notna(m.iloc[0].get(rate_col)) else None
                         except Exception:
                             rate = None
-                    # TT in MAIN PORTS
-                    tt_col = _resolve_col(
-                        df_mp,
-                        ["TT", "TT (days)", "TT(days)", "Transit Time"],
-                        ["tt", "transit time"]
-                    )
-                    if tt_col:
-                        try:
-                            tt_days = float(m.iloc[0].get(tt_col)) if pd.notna(m.iloc[0].get(tt_col)) else None
-                        except Exception:
-                            tt_days = None
+                    # TT fallback in MAIN PORTS (VTT POL/POD table has priority)
+                    if tt_days is None:
+                        tt_col = _resolve_col(
+                            df_mp,
+                            ["TT_OVS", "TT", "TT (days)", "TT(days)", "Transit Time"],
+                            ["tt", "transit time"]
+                        )
+                        if tt_col:
+                            try:
+                                tt_days = float(m.iloc[0].get(tt_col)) if pd.notna(m.iloc[0].get(tt_col)) else None
+                            except Exception:
+                                tt_days = None
             except Exception:
                 pass
         if tt_days is None and pol and pod and not df_tt.empty:
@@ -1152,10 +1353,19 @@ def build_output(input_df: pd.DataFrame, out_path: str):
     def _city_coords_from_db(cc: str, city: str) -> tuple[float | None, float | None]:
         """Lookup city coordinates from GEO_LOCATIONS/CITY_COORDS sheet, with alias fallback."""
         try:
-            if df_geo_cities is None or df_geo_cities.empty or not city:
-                return None, None
             cc_u = (cc or "").strip().upper()
             key_u = (city or "").strip().upper()
+            key_c = _canon(city)
+            # Manual fallback requested by user
+            if cc_u == "CN" and key_u == "WUHAN":
+                return 30.5928, 114.3055
+            if cc_u == "MA" and key_u == "TANGER":
+                return 35.7595, -5.8340
+            if cc_u == "CZ" and key_c in {"FRENSTAT POD RADHOSTEM", "FRENSTAT"}:
+                return 49.5489, 18.2108
+
+            if df_geo_cities is None or df_geo_cities.empty or not city:
+                return None, None
             cols = {c.lower().strip(): c for c in df_geo_cities.columns}
             cc_col = cols.get("country code") or cols.get("cc") or "Country Code"
             city_col = cols.get("city") or "City"
@@ -1226,11 +1436,19 @@ def build_output(input_df: pd.DataFrame, out_path: str):
     def _zip_coords_from_db(cc: str, z: str) -> tuple[float | None, float | None]:
         """Lookup ZIP coordinates from ZIP_COORDS/ZIP_COORDINATES when available."""
         try:
-            if 'df_zip_coords' not in locals() or df_zip_coords is None or df_zip_coords.empty or not z:
-                return None, None
             cc_u = (cc or "").strip().upper()
             z_u = _normalize_zip_token(z)
             if not z_u:
+                return None, None
+            # Manual fallback requested by user
+            if cc_u == "CN" and z_u == "430000":
+                return 30.5928, 114.3055
+            if cc_u == "MA" and z_u == "90010":
+                return 35.7595, -5.8340
+            if cc_u == "CZ" and z_u == "74401":
+                return 49.5489, 18.2108
+
+            if 'df_zip_coords' not in locals() or df_zip_coords is None or df_zip_coords.empty or not z:
                 return None, None
             cols = {c.lower().strip(): c for c in df_zip_coords.columns}
             cc_col = cols.get("country code") or cols.get("cc") or "Country Code"
@@ -1250,8 +1468,19 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         return None, None
 
     def get_domestic_eur_per_km(cc: str):
+        # Normalize common aliases used across files (e.g. GB in input vs UK in COSTPERKM)
+        alias = {
+            "GB": "UK",
+            "UK": "UK",
+            "EL": "GR",
+            "TK": "TR",
+        }
+        cc_u = str(cc or "").strip().upper()
+        cc_norm = alias.get(cc_u, cc_u)
         try:
-            m = df_cpkm[(df_cpkm["Country of origin"].astype(str).str.upper() == cc.upper()) & (df_cpkm["Destination Country"].astype(str).str.upper() == cc.upper())]
+            co = df_cpkm["Country of origin"].astype(str).str.upper().str.strip()
+            cd = df_cpkm["Destination Country"].astype(str).str.upper().str.strip()
+            m = df_cpkm[(co == cc_norm) & (cd == cc_norm)]
             if not m.empty:
                 val = m.iloc[0].get("Eur/km")
                 return float(val) if pd.notna(val) else None
@@ -1261,20 +1490,104 @@ def build_output(input_df: pd.DataFrame, out_path: str):
 
     def get_pair_eur_per_km(oc: str, dc: str):
         """Lookup €/km for a country pair. Try directional oc->dc, then symmetric dc->oc, then domestic if same country."""
+        alias = {
+            "GB": "UK",
+            "UK": "UK",
+            "EL": "GR",
+            "TK": "TR",
+        }
+        oc_u = str(oc or "").strip().upper()
+        dc_u = str(dc or "").strip().upper()
+        oc_n = alias.get(oc_u, oc_u)
+        dc_n = alias.get(dc_u, dc_u)
         try:
-            m = df_cpkm[(df_cpkm["Country of origin"].astype(str).str.upper() == oc.upper()) & (df_cpkm["Destination Country"].astype(str).str.upper() == dc.upper())]
+            co = df_cpkm["Country of origin"].astype(str).str.upper().str.strip()
+            cd = df_cpkm["Destination Country"].astype(str).str.upper().str.strip()
+            m = df_cpkm[(co == oc_n) & (cd == dc_n)]
             if not m.empty:
                 val = m.iloc[0].get("Eur/km")
                 if pd.notna(val):
                     return float(val)
             # symmetric fallback
-            m2 = df_cpkm[(df_cpkm["Country of origin"].astype(str).str.upper() == dc.upper()) & (df_cpkm["Destination Country"].astype(str).str.upper() == oc.upper())]
+            m2 = df_cpkm[(co == dc_n) & (cd == oc_n)]
             if not m2.empty:
                 val2 = m2.iloc[0].get("Eur/km")
                 if pd.notna(val2):
                     return float(val2)
-            if oc.upper() == dc.upper():
-                return get_domestic_eur_per_km(oc)
+            if oc_n == dc_n:
+                return get_domestic_eur_per_km(oc_n)
+        except Exception:
+            return None
+        return None
+
+    def get_pair_tt_road(oc: str, dc: str):
+        """Lookup inland transit time (TT_ROAD) by country pair, with symmetric fallback."""
+        alias = {
+            "GB": "UK",
+            "UK": "UK",
+            "EL": "GR",
+            "TK": "TR",
+        }
+        oc_u = str(oc or "").strip().upper()
+        dc_u = str(dc or "").strip().upper()
+        oc_n = alias.get(oc_u, oc_u)
+        dc_n = alias.get(dc_u, dc_u)
+        try:
+            co = df_cpkm["Country of origin"].astype(str).str.upper().str.strip()
+            cd = df_cpkm["Destination Country"].astype(str).str.upper().str.strip()
+            m = df_cpkm[(co == oc_n) & (cd == dc_n)]
+            if not m.empty:
+                val = m.iloc[0].get("TT_ROAD")
+                if pd.notna(val):
+                    return float(val)
+            m2 = df_cpkm[(co == dc_n) & (cd == oc_n)]
+            if not m2.empty:
+                val2 = m2.iloc[0].get("TT_ROAD")
+                if pd.notna(val2):
+                    return float(val2)
+        except Exception:
+            return None
+        return None
+
+    PLANT_ALIASES = {
+        "HORSE BRASIL": "HORSE BRAZIL",
+        "HORSE BRAZIL": "HORSE BRAZIL",
+        "HORSE VALLADOLID": "HORSE MOTORES",
+        "HORSE MOTORES": "HORSE MOTORES",
+        "WEST HORSE POWERTRAIN PORTUGAL": "HORSE CACIA",
+        "HORSE CACIA": "HORSE CACIA",
+    }
+
+    def canonical_plant_name(name: str | None) -> str:
+        raw = str(name or "").strip().upper()
+        if not raw:
+            return ""
+        return PLANT_ALIASES.get(raw, raw)
+
+    def get_hp_eur_per_km(plant_name: str, port_code: str):
+        """Lookup €/km from HORSE-PUERTO using Plant + POL/POD (column K / Eur/km)."""
+        try:
+            if df_hp is None or df_hp.empty or not plant_name or not port_code:
+                return None
+            plant_name = canonical_plant_name(plant_name)
+            cols = {str(c).lower().strip(): str(c) for c in df_hp.columns}
+            plant_col = cols.get("plant") or "Plant"
+            port_col = cols.get("pol/pod") or "POL/POD"
+            eur_col = cols.get("eur/km")
+            # Fallback to column K (index 10) if Eur/km header is unavailable
+            if eur_col is None and len(df_hp.columns) > 10:
+                eur_col = str(df_hp.columns[10])
+            if eur_col is None:
+                return None
+
+            m = df_hp[
+                df_hp.get(plant_col, pd.Series()).astype(str).str.strip().str.upper().eq(str(plant_name).strip().upper()) &
+                df_hp.get(port_col, pd.Series()).astype(str).str.strip().str.upper().eq(str(port_code).strip().upper())
+            ]
+            if not m.empty:
+                val = m.iloc[0].get(eur_col)
+                if pd.notna(val):
+                    return float(val)
         except Exception:
             return None
         return None
@@ -1396,6 +1709,16 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         # As last resort, return given code/name (may be non-ISO)
         return code or name
 
+    EUROPEAN_COUNTRY_CODES = {
+        "AL", "AD", "AT", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI",
+        "FO", "FR", "GB", "GI", "GR", "HR", "HU", "IE", "IS", "IT", "LI", "LT", "LU", "LV", "MC",
+        "MD", "ME", "MK", "MT", "NL", "NO", "PL", "PT", "RO", "RS", "SE", "SI", "SK", "SM", "UA",
+        "VA", "XK",
+    }
+
+    def is_morocco_europe_roro_route(origin_cc: str, dest_cc: str) -> bool:
+        return (origin_cc or "").strip().upper() == "MA" and (dest_cc or "").strip().upper() in EUROPEAN_COUNTRY_CODES
+
     # Normalize missing/ambiguous country codes in geo_df (if created)
     try:
         if 'geo_df' in locals() and geo_df is not None and not geo_df.empty:
@@ -1423,13 +1746,26 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             debug_msgs.append(f"Incoterm no soportado '{r.get('incoterm')}', usando {DEFAULT_INCOTERM}")
             incoterm_row = DEFAULT_INCOTERM
             included_legs, type_of_flow = flow_by_incoterm(incoterm_row)
-        # If flow is Inland: per requirement, compute ONLY Leg1 (road from origin country to destination country)
-        if str(type_of_flow).strip().upper() == "INLAND":
-            included_legs = [1]
         pn = r.get("pn"); designation = r.get("designation"); supplier = r.get("supplier_plant")
+        packaging_code_raw = r.get("packaging_code")
+        packaging_code = resolve_packaging_code(packaging_code_raw)
+        pkg_data = lookup_packaging_data(str(pn or ""), packaging_code_raw, packaging_code)
+        if pkg_data.get("pkg_debug"):
+            debug_msgs.append(str(pkg_data.get("pkg_debug")))
         oc = coerce_country_code(r.get("origin_country_code"), r.get("origin_country"))
         dc = coerce_country_code(r.get("dest_country_code"), r.get("dest_country"))
+        # Business rule: Morocco -> Europe RoRo moves are handled as Inland transport.
+        if is_morocco_europe_roro_route(oc, dc):
+            type_of_flow = "Inland"
+            included_legs = [1]
+            debug_msgs.append("Ruta especial MA->Europa por RoRo: tratada como Inland")
+        # If flow is Inland: per requirement, compute ONLY Leg1 (road from origin country to destination country)
+        elif str(type_of_flow).strip().upper() == "INLAND":
+            included_legs = [1]
+        pack_per_container = calc_pack_per_container(type_of_flow, pkg_data)
         dest_plant = r.get("dest_plant")
+        supplier_canon = canonical_plant_name(str(supplier or ""))
+        dest_plant_canon = canonical_plant_name(str(dest_plant or ""))
         origin_city = str(r.get("origin_city")) if pd.notna(r.get("origin_city")) else ""
         origin_zip = str(r.get("origin_zip")) if pd.notna(r.get("origin_zip")) else ""
         dest_city = str(r.get("dest_city")) if pd.notna(r.get("dest_city")) else ""
@@ -1446,7 +1782,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if zip_reason_pre:
                 debug_msgs.append(f"ZIP origen corregido por {zip_reason_pre}: {oc_zip_enriched_pre or '-'}→{ozip_final_pre}")
             oc_city_norm_pre = _normalize_city_for_country(oc, oc_city_clean_pre)
-            o_lat, o_lon, _ = resolve_point(geo, oc, zip_code=ozip_final_pre, city=oc_city_norm_pre, plant=supplier)
+            o_lat, o_lon, _ = resolve_point(geo, oc, zip_code=ozip_final_pre, city=oc_city_norm_pre, plant=supplier_canon)
             # ZIP_COORDS fallback
             if o_lat is None and ozip_final_pre:
                 la, lo = _zip_coords_from_db(oc, ozip_final_pre)
@@ -1475,7 +1811,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if dzip_reason_pre:
                 debug_msgs.append(f"ZIP destino corregido por {dzip_reason_pre}: {dc_zip_enriched_pre or '-'}→{dzip_final_pre}")
             dc_city_norm_pre = _normalize_city_for_country(dc, dc_city_clean_pre)
-            t_lat_pre, t_lon_pre, _ = resolve_point(geo, dc, zip_code=dzip_final_pre, city=dc_city_norm_pre, plant=dest_plant)
+            t_lat_pre, t_lon_pre, _ = resolve_point(geo, dc, zip_code=dzip_final_pre, city=dc_city_norm_pre, plant=dest_plant_canon)
             # ZIP_COORDS fallback
             if t_lat_pre is None and dzip_final_pre:
                 la, lo = _zip_coords_from_db(dc, dzip_final_pre)
@@ -1520,7 +1856,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
                 if dest_point is None:
                     debug_msgs.append("Aviso: destino sin coordenadas → no se pueden calcular km de cercanía (agrega ZIP en CITY_ZIPS o coords de ciudad en GEO_LOCATIONS/CITY_COORDS)")
 
-            # Now, lookup Rate/TT only in MAIN PORTS for the chosen pair
+            # Now, lookup Rate and TT for the chosen POL/POD pair
             ocean_rate, tt_days = get_ocean_rate_and_tt(pol, pod) if pol and pod else (None, None)
             # Compute POL/POD distances for audit if we have endpoints
             try:
@@ -1538,18 +1874,32 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if pol and pod and ocean_rate is None:
                 debug_msgs.append("Falta tarifa leg2 (ocean) para el par en MAIN PORTS")
             if pol and pod and tt_days is None:
-                debug_msgs.append("Falta TT leg2 para el par en MAIN PORTS")
+                debug_msgs.append("Falta TT leg2 para el par en VTT DATA / MAIN PORTS / TRANSITTIME")
         else:
             pol = ""
             pod = ""
             ocean_rate, tt_days = None, None
-        # €/km lookups
+        # €/km lookups + Transit Time by flow
         if str(type_of_flow).strip().upper() == "INLAND":
             eurpkm_leg1 = get_pair_eur_per_km(oc, dc)
             eurpkm_leg3 = None
+            transit_time_days = get_pair_tt_road(oc, dc)
         else:
             eurpkm_leg1 = get_domestic_eur_per_km(oc)
             eurpkm_leg3 = get_domestic_eur_per_km(dc)
+            transit_time_days = tt_days
+
+            # Business rule: for CIF/FOB/FCA maritime routes with POL/POD,
+            # use HORSE-PUERTO Eur/km (Plant + POL/POD) instead of COSTPERKM.
+            if incoterm_row in {"CIF", "FOB", "FCA"} and pol and pod:
+                hp_leg1 = get_hp_eur_per_km(supplier_canon, str(pol))
+                hp_leg3 = get_hp_eur_per_km(dest_plant_canon, str(pod))
+                eurpkm_leg1 = hp_leg1
+                eurpkm_leg3 = hp_leg3
+                if hp_leg1 is None:
+                    debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg1 (Plant+POL)")
+                if hp_leg3 is None:
+                    debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg3 (Plant+POD)")
 
         # KM computation (fully dynamic via coordinates)
         leg1_km = None
@@ -1563,8 +1913,24 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             dzip, dreason = validate_and_enrich_zip(dc, dest_city, dest_zip)
             if dreason:
                 debug_msgs.append(f"ZIP destino corregido por {dreason}: {dest_zip}→{dzip}")
-            olat, olon, osrc = resolve_point(geo, oc, zip_code=ozip, city=origin_city, plant=supplier)
-            dlat, dlon, dsrc = resolve_point(geo, dc, zip_code=dzip, city=dest_city, plant=dest_plant)
+            olat, olon, osrc = resolve_point(geo, oc, zip_code=ozip, city=origin_city, plant=supplier_canon)
+            dlat, dlon, dsrc = resolve_point(geo, dc, zip_code=dzip, city=dest_city, plant=dest_plant_canon)
+            if (olat is None or olon is None) and ozip:
+                la, lo = _zip_coords_from_db(oc, ozip)
+                if la is not None:
+                    olat, olon, osrc = la, lo, "zip_coords_db"
+            if olat is None and origin_city:
+                la, lo = _city_coords_from_db(oc, origin_city)
+                if la is not None:
+                    olat, olon, osrc = la, lo, "geo_city_fallback"
+            if (dlat is None or dlon is None) and dzip:
+                la, lo = _zip_coords_from_db(dc, dzip)
+                if la is not None:
+                    dlat, dlon, dsrc = la, lo, "zip_coords_db"
+            if dlat is None and dest_city:
+                la, lo = _city_coords_from_db(dc, dest_city)
+                if la is not None:
+                    dlat, dlon, dsrc = la, lo, "geo_city_fallback"
             if olat is not None and dlat is not None:
                 leg1_km = road_km_between((olat, olon), (dlat, dlon))
                 debug_msgs.append(f"Leg1 km dinámico ({osrc}→{dsrc})")
@@ -1609,9 +1975,9 @@ def build_output(input_df: pd.DataFrame, out_path: str):
                     tried.append(f"city-alias:{oc_city_norm}->{alias}")
                     if lat is not None and src.startswith("city:"):
                         olat, olon, osrc = lat, lon, src + "(alias)"
-            if olat is None and supplier:
-                lat, lon, src = resolve_point(geo, oc, plant=supplier)
-                tried.append(f"plant:{supplier}")
+            if olat is None and supplier_canon:
+                lat, lon, src = resolve_point(geo, oc, plant=supplier_canon)
+                tried.append(f"plant:{supplier_canon}")
                 if lat is not None and src.startswith("plant:"):
                     olat, olon, osrc = lat, lon, src
             # No HORSE-PUERTO fallback for city-level geocoding: use database city coords only
@@ -1693,7 +2059,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             dzip_final, dzip_reason = validate_and_enrich_zip(dc, dc_city_clean, dc_zip_parsed)
             if dzip_reason:
                 debug_msgs.append(f"ZIP destino corregido por {dzip_reason}: {dc_zip_parsed or '-'}→{dzip_final}")
-            tlat, tlon, tsrc = resolve_point(geo, dc, zip_code=dzip_final, city=dc_city_clean, plant=dest_plant)
+            tlat, tlon, tsrc = resolve_point(geo, dc, zip_code=dzip_final, city=dc_city_clean, plant=dest_plant_canon)
             if (tlat is None or tlon is None) and dzip_final:
                 la, lo = _zip_coords_from_db(dc, dzip_final)
                 if la is not None:
@@ -1710,8 +2076,8 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         # Special: For DAP, compute origin → destination plant distance for visibility, even if buyer pays 0
         if incoterm_row == 'DAP':
             try:
-                olat, olon, osrc = resolve_point(geo, oc, zip_code=origin_zip, city=origin_city, plant=supplier)
-                tlat, tlon, tsrc = resolve_point(geo, dc, zip_code=dest_zip, city=dest_city, plant=dest_plant)
+                olat, olon, osrc = resolve_point(geo, oc, zip_code=origin_zip, city=origin_city, plant=supplier_canon)
+                tlat, tlon, tsrc = resolve_point(geo, dc, zip_code=dest_zip, city=dest_city, plant=dest_plant_canon)
                 if olat is not None and tlat is not None:
                     dap_km = road_km_between((olat, olon), (tlat, tlon))
                     debug_msgs.append(f"DAP distancia origen→destino ({osrc}→{tsrc}): {dap_km:.1f} km")
@@ -1721,9 +2087,11 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             debug_msgs.append("Falta €/km leg1 (origen)")
         if 3 in included_legs and eurpkm_leg3 is None:
             debug_msgs.append("Falta €/km leg3 (destino)")
+        # Keep Leg 3 cost aligned with the visible "LEG3/POD Distance (km)" output.
+        leg3_cost_km = pod_distance_km if pod_distance_km is not None else leg3_km
         leg1_cost = (eurpkm_leg1 * leg1_km) if (1 in included_legs and eurpkm_leg1 and leg1_km) else (0.0 if 1 in included_legs else None)
         leg2_cost = ocean_rate if 2 in included_legs else None
-        leg3_cost = (eurpkm_leg3 * leg3_km) if (3 in included_legs and eurpkm_leg3 and leg3_km) else (0.0 if 3 in included_legs else None)
+        leg3_cost = (eurpkm_leg3 * leg3_cost_km) if (3 in included_legs and eurpkm_leg3 and leg3_cost_km) else (0.0 if 3 in included_legs else None)
         if 2 in included_legs and ocean_rate is None:
             debug_msgs.append("Falta tarifa leg2 (ocean)")
         # Mostrar TT si hay par POL/POD aunque el comprador no pague leg 2
@@ -1764,11 +2132,19 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             "leg2_ocean_rate_eur": ocean_rate if 2 in included_legs else None,
             # Publicar TT cuando el flujo es Overseas (aunque el comprador no pague leg2)
             "leg2_tt_days": tt_days if str(type_of_flow).strip().upper() == "OVERSEAS" else None,
+            "transit_time_days": transit_time_days,
             "leg3_eur_per_km": eurpkm_leg3 if 3 in included_legs else None,
-            "leg3_km": leg3_km,
+            "leg3_km": leg3_cost_km,
             "leg3_cost_eur": leg3_cost,
             "total_cost_eur": total,
             "Red flag/Debug": "; ".join(debug_msgs) if debug_msgs else "",
+            "packaging_code_resolved": packaging_code,
+            "pkg_volume_m3": pkg_data["pkg_volume_m3"],
+            "pkg_snp": pkg_data["pkg_snp"],
+            "pkg_weight_part": pkg_data["pkg_weight_part"],
+            "pkg_weight_empty": pkg_data["pkg_weight_empty"],
+            "pkg_weight_full": pkg_data["pkg_weight_full"],
+            "pack_per_cont_40ft": pack_per_container,
             "notes": "Distancias dinámicas: puertos desde Ports Locations; origen/destino desde CITY_ZIPS y GEO_LOCATIONS/CITY_COORDS. Si falta coordenada, la distancia queda vacía."
         })
 
@@ -1795,6 +2171,29 @@ def build_output(input_df: pd.DataFrame, out_path: str):
 
     # Incoterm series directly from input (column M in the template)
     incoterm_series = input_df.get("incoterm") if "incoterm" in input_df.columns else pd.Series([None] * len(input_df))
+    pkg_vol_m3 = pd.to_numeric(quote_df.get("pkg_volume_m3"), errors="coerce")
+    pkg_snp = pd.to_numeric(quote_df.get("pkg_snp"), errors="coerce")
+    pack_per_cont = pd.to_numeric(quote_df.get("pack_per_cont_40ft"), errors="coerce")
+    total_cost_eur = pd.to_numeric(quote_df.get("total_cost_eur"), errors="coerce")
+    pkg_vol_m3_out = pkg_vol_m3.round(2)
+    pkg_snp_out = pkg_snp.round(2)
+    vol_per_cont_m3 = (pack_per_cont * pkg_vol_m3)
+    part_vol_m3 = (pkg_vol_m3_out / pkg_snp_out).where(pkg_snp_out > 0)
+    plant_to_plant_eur_m3 = (total_cost_eur / vol_per_cont_m3).where(vol_per_cont_m3 > 0)
+    plant_to_plant_eur_part = (part_vol_m3 * plant_to_plant_eur_m3)
+    pn_unit_cost_eur = pd.to_numeric(raw_like_df.get("PN Unit cost (€)"), errors="coerce")
+    floating_stock_eur_part = pn_unit_cost_eur * 0.08 / 365 * pd.to_numeric(
+        quote_df.get("transit_time_days"), errors="coerce"
+    )
+    pn_unit_cost_eur_out = pn_unit_cost_eur.round(2)
+    plant_to_plant_eur_part_out = plant_to_plant_eur_part.round(2)
+    floating_stock_eur_part_out = floating_stock_eur_part.round(2)
+    pa_log_sf_total_eur_part = (pn_unit_cost_eur_out + plant_to_plant_eur_part_out + floating_stock_eur_part_out).round(2)
+    annual_needs = pd.to_numeric(raw_like_df.get("Anual Needs (PN / Year)"), errors="coerce")
+    daily_need = pd.to_numeric(raw_like_df.get("Daily Need (PN / Day)"), errors="coerce")
+    annual_weight_keur = (annual_needs * pa_log_sf_total_eur_part / 1000).round(2)
+    fcf_pipe_keur = (daily_need * pn_unit_cost_eur_out * pd.to_numeric(quote_df.get("transit_time_days"), errors="coerce") / 1000).round(2)
+
     computed_map = {
         "POL": quote_df.get("POL"),
         "POD": quote_df.get("POD"),
@@ -1802,15 +2201,35 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         # Prefer the explicitly computed leg1_km when present, else fall back to pol_distance_km
         "Leg1/POL Distance (km)": pd.to_numeric(
             quote_df.get("leg1_km").fillna(quote_df.get("pol_distance_km")), errors="coerce"
-        ).round(0),
+        ).round(2),
         # Keep LEG3/POD Distance as the single Leg3 distance output
-        "LEG3/POD Distance (km)": pd.to_numeric(quote_df.get("pod_distance_km"), errors="coerce").round(0),
-        "TT (days)": quote_df.get("leg2_tt_days"),
+        "LEG3/POD Distance (km)": pd.to_numeric(quote_df.get("pod_distance_km"), errors="coerce").round(2),
+        "TT (days)": pd.to_numeric(quote_df.get("leg2_tt_days"), errors="coerce").round(2),
+        "Transit Time": pd.to_numeric(quote_df.get("transit_time_days"), errors="coerce").round(2),
         # Explicit leg cost columns
-        "Leg1 Inland Cost (€)": pd.to_numeric(quote_df.get("leg1_cost_eur"), errors="coerce").fillna(0.0).round(0),
-        "Leg2 Overseas Cost (€)": pd.to_numeric(quote_df.get("leg2_ocean_rate_eur"), errors="coerce").fillna(0.0).round(0),
-        "Leg 3 Inland Cost (€)": pd.to_numeric(quote_df.get("leg3_cost_eur"), errors="coerce").fillna(0.0).round(0),
-        "Total Transportation Cost (€)": pd.to_numeric(quote_df.get("total_cost_eur"), errors="coerce").fillna(0.0).round(0),
+        "Leg1 Inland Cost (€)": pd.to_numeric(quote_df.get("leg1_cost_eur"), errors="coerce").fillna(0.0).round(2),
+        "Leg2 Overseas Cost (€)": pd.to_numeric(quote_df.get("leg2_ocean_rate_eur"), errors="coerce").fillna(0.0).round(2),
+        "Leg 3 Inland Cost (€)": pd.to_numeric(quote_df.get("leg3_cost_eur"), errors="coerce").fillna(0.0).round(2),
+        "Total Transportation Cost (€)": total_cost_eur.fillna(0.0).round(2),
+        "Packaging Code": quote_df.get("packaging_code_resolved"),
+        "Packaging Volume (m³)": pkg_vol_m3_out,
+        "SNP_Pack": pkg_snp_out,
+        "Part volume(m3/part)": part_vol_m3.round(4),
+        "pack/cont 40ft": pack_per_cont.round(2),
+        "vol/cont 40ft (m3)": vol_per_cont_m3.round(2),
+        "weight/cont 40ft (kg)": (
+            pd.to_numeric(quote_df.get("pack_per_cont_40ft"), errors="coerce") *
+            pd.to_numeric(quote_df.get("pkg_weight_full"), errors="coerce")
+        ).round(2),
+        "Plant to plant (€/m3)": plant_to_plant_eur_m3.round(2),
+        "Plant to plant (€/part)": plant_to_plant_eur_part_out,
+        "Floating Stock €/Part": floating_stock_eur_part_out,
+        "PA + LOG + SF TOTAL €/Part": pa_log_sf_total_eur_part.round(2),
+        "Annual weight K€": annual_weight_keur,
+        "FCF Pipe K€": fcf_pipe_keur,
+        "Weight/part (kg)": pd.to_numeric(quote_df.get("pkg_weight_part"), errors="coerce").round(2),
+        "Weight empty pack (kg)": pd.to_numeric(quote_df.get("pkg_weight_empty"), errors="coerce").round(2),
+        "Weight full pack (kg)": pd.to_numeric(quote_df.get("pkg_weight_full"), errors="coerce").round(2),
         "Type of Flow": quote_df.get("type_of_flow"),
         "Red flag/Debug": quote_df.get("Red flag/Debug", pd.Series([""] * len(quote_df))),
         # Provide 'Incoterm' from input as a fallback if not found in raw_like_df
@@ -1884,8 +2303,37 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         cols = [DEBUG_COL, FLOW_COL, "Incoterm"] + [c for c in cols if c not in (DEBUG_COL, FLOW_COL, "Incoterm")]
 
     # Remove legacy aggregated columns if present
-    legacy_cost_cols = {"Inland Cost (€)", "Overseas Cost (€)"}
+    legacy_cost_cols = {
+        "Inland Cost (€)",
+        "Overseas Cost (€)",
+        "Packaging Volume (mm³)",
+        "Part volume (m3)",
+        "SNP / Pack (PN / Packaging)",
+    }
     cols = [c for c in cols if c not in legacy_cost_cols]
+
+    # Ensure packaging columns are always present (append at end if missing)
+    PKG_COLS = [
+        "Packaging Code",
+        "Packaging Volume (m³)",
+        "SNP_Pack",
+        "Part volume(m3/part)",
+        "pack/cont 40ft",
+        "vol/cont 40ft (m3)",
+        "weight/cont 40ft (kg)",
+        "Plant to plant (€/m3)",
+        "Plant to plant (€/part)",
+        "Floating Stock €/Part",
+        "PA + LOG + SF TOTAL €/Part",
+        "Annual weight K€",
+        "FCF Pipe K€",
+        "Weight/part (kg)",
+        "Weight empty pack (kg)",
+        "Weight full pack (kg)",
+    ]
+    for pc in PKG_COLS:
+        if pc not in cols:
+            cols.append(pc)
 
     # Ensure POL and POD are present (always visible in output)
     for k in ("POL", "POD"):
@@ -1899,7 +2347,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         "Leg 3 Inland Cost (€)",
         "Total Transportation Cost (€)"
     ]
-    for lc in ["TT (days)"] + leg_cols_in_order:
+    for lc in ["TT (days)", "Transit Time"] + leg_cols_in_order:
         if lc not in cols:
             cols.append(lc)
     # Reinsert leg columns right after TT (days)
@@ -1944,6 +2392,69 @@ def build_output(input_df: pd.DataFrame, out_path: str):
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         input_df.to_excel(writer, sheet_name="Input", index=False)
         final_quote_df.to_excel(writer, sheet_name="Quote", index=False)
+
+        # Highlight all Quote headers in yellow.
+        quote_ws = writer.book["Quote"]
+        yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+        for cell in quote_ws[1]:
+            cell.fill = yellow_fill
+
+        # Adjust Quote column widths from B to AL based on content length.
+        for col_idx in range(2, 39):  # B..AL
+            max_len = 0
+            for row in quote_ws.iter_rows(min_row=1, max_row=quote_ws.max_row, min_col=col_idx, max_col=col_idx):
+                val = row[0].value
+                if val is None:
+                    continue
+                txt = str(val)
+                if len(txt) > max_len:
+                    max_len = len(txt)
+            quote_ws.column_dimensions[get_column_letter(col_idx)].width = max(12, min(max_len + 2, 45))
+
+        # Force 2-decimal display in key numeric result columns.
+        two_dec_cols = {
+            "Leg1/POL Distance (km)",
+            "LEG3/POD Distance (km)",
+            "TT (days)",
+            "Transit Time",
+            "Leg1 Inland Cost (€)",
+            "Leg2 Overseas Cost (€)",
+            "Leg 3 Inland Cost (€)",
+            "Total Transportation Cost (€)",
+            "Packaging Volume (m³)",
+            "SNP_Pack",
+            "Part volume(m3/part)",
+            "pack/cont 40ft",
+            "vol/cont 40ft (m3)",
+            "weight/cont 40ft (kg)",
+            "Plant to plant (€/m3)",
+            "Plant to plant (€/part)",
+            "Floating Stock €/Part",
+            "PA + LOG + SF TOTAL €/Part",
+            "Annual weight K€",
+            "FCF Pipe K€",
+            "Weight/part (kg)",
+            "Weight empty pack (kg)",
+            "Weight full pack (kg)",
+        }
+        header_to_idx = {str(c.value): i + 1 for i, c in enumerate(quote_ws[1])}
+        for h in two_dec_cols:
+            idx = header_to_idx.get(h)
+            if not idx:
+                continue
+            for row in quote_ws.iter_rows(min_row=2, max_row=quote_ws.max_row, min_col=idx, max_col=idx):
+                cell = row[0]
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = "0.00"
+
+        # Specific precision override: part volume needs 4 decimals.
+        idx_part_vol = header_to_idx.get("Part volume(m3/part)")
+        if idx_part_vol:
+            for row in quote_ws.iter_rows(min_row=2, max_row=quote_ws.max_row, min_col=idx_part_vol, max_col=idx_part_vol):
+                cell = row[0]
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = "0.0000"
+
         if "incoterm" in input_df.columns:
             inc_series = input_df["incoterm"].dropna()
             used_incoterms = sorted(set([str(x).upper().strip() for x in inc_series.tolist()]))

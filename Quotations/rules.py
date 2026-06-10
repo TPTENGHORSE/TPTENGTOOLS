@@ -13,16 +13,16 @@ _INCOTERM_RULES = {
     # Legend: 1=Origin inland, 2=Main carriage (ocean/air), 3=Destination inland.
     # Notes:
     # - Keep type_of_flow="Overseas" whenever any sea leg is relevant or to avoid the Inland override in downstream logic.
-    # - For terms where buyer pays no transport (e.g., DAP/DDP), leave legs empty [].
+    # - Single leg1 cases represent principal/only inland segment scenarios.
     # Common ocean terms (buyer responsibilities):
     "EXW": ([1, 2, 3], "Overseas"),   # Buyer arranges/pays everything from supplier: legs 1,2,3
-    "FCA": ([2, 3], "Overseas"),      # Seller delivers to carrier at origin; buyer pays main carriage + destination inland
+    "FCA": ([1, 2, 3], "Overseas"),   # Pickup at supplier site: include legs 1, 2, and 3
     "FOB": ([2, 3], "Overseas"),      # Seller delivers on board at POL; buyer pays main carriage + destination inland
     "CFR": ([3], "Overseas"),         # Seller pays main carriage to POD; buyer pays destination inland
     "CIF": ([3], "Overseas"),         # Same as CFR (insurance by seller); buyer pays destination inland
     "CPT": ([3], "Overseas"),         # Carriage Paid To (by seller); buyer pays destination inland
     "CIP": ([3], "Overseas"),         # Carriage & Insurance Paid (by seller); buyer pays destination inland
-    "DAP": ([1], "Inland"),          # Delivered At Place (by seller); buyer pays no transport
+    "DAP": ([1], "Inland"),          # Principal/only inland segment: consider leg1 only
     "DDP": ([], "Overseas"),          # Delivered Duty Paid (by seller); buyer pays no transport
 }
 
