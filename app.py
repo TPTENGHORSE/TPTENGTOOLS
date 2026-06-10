@@ -64,7 +64,7 @@ elif menu == "VTTs":
 
 elif menu == "MyQuotes":
     st.title("MyQuotes")
-    st.caption("Upload Quotation Template _INPUT and download the generated Horse_Quotation.")
+    st.caption("Upload Quotation Template _INPUT and download the generated Horse_TPTQuotation.")
 
     def _secret_or_env(name: str) -> str:
         try:
@@ -119,15 +119,19 @@ elif menu == "MyQuotes":
         ), None
 
     def next_qflow_output_path(directory: str) -> str:
-        """Build next output file path: Horse_Quotation_YYYYMMDD_descarga_N.xlsx."""
+        """Build next output file path: Horse_TPTQuotation_YYYYMMDD_N.xlsx."""
         os.makedirs(directory, exist_ok=True)
         date_tag = datetime.now().strftime("%Y%m%d")
-        pattern = re.compile(rf"^Horse_Quotation_{date_tag}_descarga_(\d+)\.xlsx$", re.IGNORECASE)
+        pattern_new = re.compile(rf"^Horse_TPTQuotation_{date_tag}_(\d+)\.xlsx$", re.IGNORECASE)
+        # Backward compatibility: keep correlativo based on old naming if files already exist.
+        pattern_old = re.compile(rf"^Horse_Quotation_{date_tag}_descarga_(\d+)\.xlsx$", re.IGNORECASE)
         max_n = 0
         try:
             for name in os.listdir(directory):
-                m = pattern.match(name)
-                if m:
+                m_new = pattern_new.match(name)
+                m_old = pattern_old.match(name)
+                m = m_new or m_old
+                if m is not None:
                     try:
                         n = int(m.group(1))
                         if n > max_n:
@@ -137,7 +141,7 @@ elif menu == "MyQuotes":
         except FileNotFoundError:
             pass
         next_n = max_n + 1
-        return os.path.join(directory, f"Horse_Quotation_{date_tag}_descarga_{next_n}.xlsx")
+        return os.path.join(directory, f"Horse_TPTQuotation_{date_tag}_{next_n}.xlsx")
 
     uploaded = st.file_uploader(
         "Select Quotation Template _INPUT (.xlsx)",
@@ -150,7 +154,7 @@ elif menu == "MyQuotes":
         if "Quotation Template _INPUT" not in input_name:
             st.warning("The file should be named Quotation Template _INPUT (or contain that text in the filename).")
 
-        if st.button("Generate Horse_Quotation", type="primary"):
+        if st.button("Generate Horse_TPTQuotation", type="primary"):
             try:
                 runtime_qtool_dir = os.path.join(tempfile.gettempdir(), "qflow_qtool")
                 ok_db, db_msg, db_path = ensure_qtool_data(runtime_qtool_dir)
@@ -182,7 +186,7 @@ elif menu == "MyQuotes":
                 st.success(f"File generated: {os.path.basename(out_path)}")
                 st.caption(db_msg)
                 st.download_button(
-                    label="Download Horse_Quotation",
+                    label="Download Horse_TPTQuotation",
                     data=out_bytes,
                     file_name=os.path.basename(out_path),
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

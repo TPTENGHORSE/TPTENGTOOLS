@@ -52,7 +52,7 @@ except Exception:
 
 QTOOL_DIR = r"C:\Users\OLMEDOJorge\OneDrive - Horse\Exchange VRAC\02_Engineering Department\08. New tools & technologies\QTool"
 INPUT_FILE = os.path.join(QTOOL_DIR, "upload_Quotation Template.xlsx")
-OUTPUT_PREFIX = "download_quotation-output_"
+OUTPUT_PREFIX = "Horse_TPTQuotation"
 OUTPUT_EXT = ".xlsx"
 DEFAULT_INCOTERM = os.environ.get("QINCOTERM", "FCA")
 
@@ -97,12 +97,17 @@ def find_qtool_data_file() -> str | None:
 
 
 def next_output_path(directory: str) -> str:
-    pattern = re.compile(rf"^{re.escape(OUTPUT_PREFIX)}(\d+){re.escape(OUTPUT_EXT)}$", re.IGNORECASE)
+    date_tag = datetime.now().strftime("%Y%m%d")
+    pattern_new = re.compile(rf"^{re.escape(OUTPUT_PREFIX)}_{date_tag}_(\d+){re.escape(OUTPUT_EXT)}$", re.IGNORECASE)
+    # Backward compatibility: keep correlativo based on old naming if files already exist.
+    pattern_old = re.compile(rf"^Horse_Quotation_{date_tag}_descarga_(\d+){re.escape(OUTPUT_EXT)}$", re.IGNORECASE)
     max_n = 0
     try:
         for name in os.listdir(directory):
-            m = pattern.match(name)
-            if m:
+            m_new = pattern_new.match(name)
+            m_old = pattern_old.match(name)
+            m = m_new or m_old
+            if m is not None:
                 try:
                     n = int(m.group(1))
                     if n > max_n:
@@ -112,7 +117,7 @@ def next_output_path(directory: str) -> str:
     except FileNotFoundError:
         os.makedirs(directory, exist_ok=True)
     next_n = max_n + 1
-    return os.path.join(directory, f"{OUTPUT_PREFIX}{next_n}{OUTPUT_EXT}")
+    return os.path.join(directory, f"{OUTPUT_PREFIX}_{date_tag}_{next_n}{OUTPUT_EXT}")
 
 
 def _find_reference_output_file() -> str | None:
