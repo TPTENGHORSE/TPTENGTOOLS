@@ -77,13 +77,19 @@ elif menu == "MyQuotes":
     def ensure_qtool_data(runtime_dir: str) -> tuple[bool, str, str | None]:
         """Ensure QUOTATION TOOL DATA.xlsx exists in runtime_dir.
         Priority:
-        1) SharePoint URL from secrets/env
-        2) Existing local file in generate_quote.QTOOL_DIR
+        1) Repository-bundled file: Quotations/QUOTATION TOOL DATA.xlsx
+        2) SharePoint URL from secrets/env
+        3) Existing local file in generate_quote.QTOOL_DIR
         """
         os.makedirs(runtime_dir, exist_ok=True)
         dst = os.path.join(runtime_dir, "QUOTATION TOOL DATA.xlsx")
 
-        # 1) SharePoint source (recommended for Streamlit Cloud)
+        # 1) Repository-bundled file (recommended when deploying with GitHub)
+        repo_data = os.path.join(os.path.dirname(__file__), "Quotations", "QUOTATION TOOL DATA.xlsx")
+        if os.path.exists(repo_data):
+            return True, "Base de datos cargada desde Quotations/QUOTATION TOOL DATA.xlsx.", repo_data
+
+        # 2) SharePoint source (recommended for Streamlit Cloud)
         sp_url = _secret_or_env("QTOOL_DATA_SHAREPOINT_URL")
         sp_token = _secret_or_env("QTOOL_DATA_BEARER_TOKEN")
         if sp_url:
@@ -101,14 +107,14 @@ elif menu == "MyQuotes":
             except Exception as e:
                 return False, f"No se pudo descargar QUOTATION TOOL DATA desde SharePoint: {e}", None
 
-        # 2) Local fallback (desktop execution)
+        # 3) Local fallback (desktop execution)
         local_qtool_dir = getattr(gq, "QTOOL_DIR", "")
         local_data = os.path.join(local_qtool_dir, "QUOTATION TOOL DATA.xlsx") if local_qtool_dir else ""
         if local_data and os.path.exists(local_data):
             return True, "Usando QUOTATION TOOL DATA local.", local_data
 
         return False, (
-            "No se encontró QUOTATION TOOL DATA. Configura QTOOL_DATA_SHAREPOINT_URL en Streamlit secrets "
+            "No se encontró QUOTATION TOOL DATA. Sube Quotations/QUOTATION TOOL DATA.xlsx al repo o configura QTOOL_DATA_SHAREPOINT_URL en Streamlit secrets "
             "(y opcionalmente QTOOL_DATA_BEARER_TOKEN si requiere autenticación)."
         ), None
 

@@ -59,6 +59,13 @@ DEFAULT_INCOTERM = os.environ.get("QINCOTERM", "FCA")
 
 def find_qtool_data_file() -> str | None:
     """Find the QUOTATION TOOL DATA Excel in QTOOL_DIR."""
+    # 0) Prefer repository-bundled file (works in Streamlit Cloud / GitHub deploy)
+    try:
+        repo_local = os.path.join(os.path.dirname(__file__), "QUOTATION TOOL DATA.xlsx")
+        if os.path.exists(repo_local):
+            return repo_local
+    except Exception:
+        pass
     # 1) Prefer exact canonical filename if present
     try:
         exact = os.path.join(QTOOL_DIR, "QUOTATION TOOL DATA.xlsx")
