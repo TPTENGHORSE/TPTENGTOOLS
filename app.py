@@ -64,7 +64,7 @@ elif menu == "VTTs":
 
 elif menu == "MyQuotes":
     st.title("MyQuotes")
-    st.caption("Carga Quotation Template _INPUT y descarga el Horse_Quotation generado.")
+    st.caption("Upload Quotation Template _INPUT and download the generated Horse_Quotation.")
 
     def _secret_or_env(name: str) -> str:
         try:
@@ -87,7 +87,7 @@ elif menu == "MyQuotes":
         # 1) Repository-bundled file (recommended when deploying with GitHub)
         repo_data = os.path.join(os.path.dirname(__file__), "Quotations", "QUOTATION TOOL DATA.xlsx")
         if os.path.exists(repo_data):
-            return True, "Base de datos cargada desde Quotations/QUOTATION TOOL DATA.xlsx.", repo_data
+            return True, "Database loaded from Quotations/QUOTATION TOOL DATA.xlsx.", repo_data
 
         # 2) SharePoint source (recommended for Streamlit Cloud)
         sp_url = _secret_or_env("QTOOL_DATA_SHAREPOINT_URL")
@@ -103,19 +103,19 @@ elif menu == "MyQuotes":
                         content = r.read()
                     with open(dst, "wb") as f:
                         f.write(content)
-                return True, "Base de datos cargada desde SharePoint.", dst
+                return True, "Database loaded from SharePoint.", dst
             except Exception as e:
-                return False, f"No se pudo descargar QUOTATION TOOL DATA desde SharePoint: {e}", None
+                return False, f"Could not download QUOTATION TOOL DATA from SharePoint: {e}", None
 
         # 3) Local fallback (desktop execution)
         local_qtool_dir = getattr(gq, "QTOOL_DIR", "")
         local_data = os.path.join(local_qtool_dir, "QUOTATION TOOL DATA.xlsx") if local_qtool_dir else ""
         if local_data and os.path.exists(local_data):
-            return True, "Usando QUOTATION TOOL DATA local.", local_data
+            return True, "Using local QUOTATION TOOL DATA.", local_data
 
         return False, (
-            "No se encontró QUOTATION TOOL DATA. Sube Quotations/QUOTATION TOOL DATA.xlsx al repo o configura QTOOL_DATA_SHAREPOINT_URL en Streamlit secrets "
-            "(y opcionalmente QTOOL_DATA_BEARER_TOKEN si requiere autenticación)."
+            "QUOTATION TOOL DATA was not found. Add Quotations/QUOTATION TOOL DATA.xlsx to the repository or configure "
+            "QTOOL_DATA_SHAREPOINT_URL in Streamlit secrets (and optionally QTOOL_DATA_BEARER_TOKEN if authentication is required)."
         ), None
 
     def next_qflow_output_path(directory: str) -> str:
@@ -140,7 +140,7 @@ elif menu == "MyQuotes":
         return os.path.join(directory, f"Horse_Quotation_{date_tag}_descarga_{next_n}.xlsx")
 
     uploaded = st.file_uploader(
-        "Selecciona Quotation Template _INPUT (.xlsx)",
+        "Select Quotation Template _INPUT (.xlsx)",
         type=["xlsx"],
         accept_multiple_files=False,
     )
@@ -148,9 +148,9 @@ elif menu == "MyQuotes":
     if uploaded is not None:
         input_name = uploaded.name or ""
         if "Quotation Template _INPUT" not in input_name:
-            st.warning("El archivo debe llamarse Quotation Template _INPUT (o contener ese texto en el nombre).")
+            st.warning("The file should be named Quotation Template _INPUT (or contain that text in the filename).")
 
-        if st.button("Generar Horse_Quotation", type="primary"):
+        if st.button("Generate Horse_Quotation", type="primary"):
             try:
                 runtime_qtool_dir = os.path.join(tempfile.gettempdir(), "qflow_qtool")
                 ok_db, db_msg, db_path = ensure_qtool_data(runtime_qtool_dir)
@@ -179,16 +179,16 @@ elif menu == "MyQuotes":
                 with open(out_path, "rb") as f:
                     out_bytes = f.read()
 
-                st.success(f"Archivo generado: {os.path.basename(out_path)}")
+                st.success(f"File generated: {os.path.basename(out_path)}")
                 st.caption(db_msg)
                 st.download_button(
-                    label="Descargar Horse_Quotation",
+                    label="Download Horse_Quotation",
                     data=out_bytes,
                     file_name=os.path.basename(out_path),
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:
-                st.error(f"Error al generar archivo: {e}")
+                st.error(f"Error while generating file: {e}")
             finally:
                 try:
                     if "in_path" in locals() and os.path.exists(in_path):

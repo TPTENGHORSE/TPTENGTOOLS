@@ -2211,7 +2211,6 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         ).round(2),
         # Keep LEG3/POD Distance as the single Leg3 distance output
         "LEG3/POD Distance (km)": pd.to_numeric(quote_df.get("pod_distance_km"), errors="coerce").round(2),
-        "TT (days)": pd.to_numeric(quote_df.get("leg2_tt_days"), errors="coerce").round(2),
         "Transit Time": pd.to_numeric(quote_df.get("transit_time_days"), errors="coerce").round(2),
         # Explicit leg cost columns
         "Leg1 Inland Cost (€)": pd.to_numeric(quote_df.get("leg1_cost_eur"), errors="coerce").fillna(0.0).round(2),
@@ -2250,7 +2249,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
     else:
         # Fallback: original input columns first, then computable set in a stable order
         cols = [*STD_COLS.keys(), *[k for k in [
-            "POL","POD","Leg1/POL Distance (km)","LEG3/POD Distance (km)","TT (days)",
+            "POL","POD","Leg1/POL Distance (km)","LEG3/POD Distance (km)","Transit Time",
             "Leg1 Inland Cost (€)","Leg2 Overseas Cost (€)",
             "Leg 3 Inland Cost (€)",
             "Total Transportation Cost (€)","Red flag/Debug"
@@ -2313,6 +2312,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
     legacy_cost_cols = {
         "Inland Cost (€)",
         "Overseas Cost (€)",
+        "TT (days)",
         "Packaging Volume (mm³)",
         "Part volume (m3)",
         "SNP / Pack (PN / Packaging)",
@@ -2324,19 +2324,20 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         "Packaging Code",
         "Packaging Volume (m³)",
         "SNP_Pack",
+        "Weight/part (kg)",
+        "Weight empty pack (kg)",
+        "Weight full pack (kg)",
         "Part volume(m3/part)",
         "pack/cont 40ft",
         "vol/cont 40ft (m3)",
         "weight/cont 40ft (kg)",
         "Plant to plant (€/m3)",
         "Plant to plant (€/part)",
+        "Transit Time",
         "Floating Stock €/Part",
         "PA + LOG + SF TOTAL €/Part",
         "Annual weight K€",
         "FCF Pipe K€",
-        "Weight/part (kg)",
-        "Weight empty pack (kg)",
-        "Weight full pack (kg)",
     ]
     for pc in PKG_COLS:
         if pc not in cols:
@@ -2347,38 +2348,62 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         if k not in cols:
             cols.append(k)
 
-    # Ensure TT and the three leg cost columns exist and are placed immediately after TT (days)
+    # Ensure Transit Time and the three leg cost columns exist and are placed together.
     leg_cols_in_order = [
         "Leg1 Inland Cost (€)",
         "Leg2 Overseas Cost (€)",
         "Leg 3 Inland Cost (€)",
         "Total Transportation Cost (€)"
     ]
-    for lc in ["TT (days)", "Transit Time"] + leg_cols_in_order:
+    for lc in ["Transit Time"] + leg_cols_in_order:
         if lc not in cols:
             cols.append(lc)
-    # Reinsert leg columns right after TT (days)
-    if "TT (days)" in cols:
+    # Reinsert leg columns right after Transit Time
+    if "Transit Time" in cols:
         # Keep Debug and Flow at the front
         front = [DEBUG_COL, FLOW_COL, "Incoterm"] if "Incoterm" in cols else [DEBUG_COL, FLOW_COL]
         rest = [c for c in cols if c not in set(front)]
         # Remove leg columns from rest
         rest_wo_legs = [c for c in rest if c not in set(leg_cols_in_order)]
-        # Ensure POL/POD sit immediately before TT (days)
+        # Ensure POL/POD sit immediately before Transit Time
         rest_wo_legs_no_ports = [c for c in rest_wo_legs if c not in ("POL", "POD", "Leg1/POL Distance (km)", "LEG3/POD Distance (km)")]
-        # Find TT index in rest_wo_legs
-        if "TT (days)" in rest_wo_legs_no_ports:
-            tt_idx = rest_wo_legs_no_ports.index("TT (days)")
+        # Find Transit Time index in rest_wo_legs
+        if "Transit Time" in rest_wo_legs_no_ports:
+            tt_idx = rest_wo_legs_no_ports.index("Transit Time")
             # Insert POL/POD just before TT
             before_tt = rest_wo_legs_no_ports[:tt_idx]
             after_tt = rest_wo_legs_no_ports[tt_idx+1:]
             ports_block = [c for c in ("POL", "POD", "Leg1/POL Distance (km)", "LEG3/POD Distance (km)") if c in rest_wo_legs]
-            rest_final = before_tt + ports_block + ["TT (days)"] + leg_cols_in_order + after_tt
+            rest_final = before_tt + ports_block + ["Transit Time"] + leg_cols_in_order + after_tt
         else:
-            # If TT not in rest set, append in order
+            # If Transit Time not in rest set, append in order
             ports_block = [c for c in ("POL", "POD", "Leg1/POL Distance (km)", "LEG3/POD Distance (km)") if c in rest_wo_legs]
-            rest_final = rest_wo_legs_no_ports + ports_block + ["TT (days)"] + leg_cols_in_order
+            rest_final = rest_wo_legs_no_ports + ports_block + ["Transit Time"] + leg_cols_in_order
         cols = front + rest_final
+
+    # Force requested business block order.
+    REQUESTED_BLOCK_ORDER = [
+        "Packaging Volume (m³)",
+        "SNP_Pack",
+        "Weight/part (kg)",
+        "Weight empty pack (kg)",
+        "Weight full pack (kg)",
+        "Part volume(m3/part)",
+        "pack/cont 40ft",
+        "vol/cont 40ft (m3)",
+        "weight/cont 40ft (kg)",
+        "Plant to plant (€/m3)",
+        "Plant to plant (€/part)",
+        "Transit Time",
+        "Floating Stock €/Part",
+        "PA + LOG + SF TOTAL €/Part",
+        "Annual weight K€",
+        "FCF Pipe K€",
+    ]
+    for c in REQUESTED_BLOCK_ORDER:
+        if c not in cols:
+            cols.append(c)
+    cols = [c for c in cols if c not in REQUESTED_BLOCK_ORDER] + REQUESTED_BLOCK_ORDER
 
     # Assemble final DataFrame respecting target columns
     data = {}
@@ -2422,7 +2447,6 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         two_dec_cols = {
             "Leg1/POL Distance (km)",
             "LEG3/POD Distance (km)",
-            "TT (days)",
             "Transit Time",
             "Leg1 Inland Cost (€)",
             "Leg2 Overseas Cost (€)",
