@@ -1906,16 +1906,25 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             transit_time_days = tt_days
 
             # Business rule: for CIF/FOB/FCA maritime routes with POL/POD,
-            # use HORSE-PUERTO Eur/km (Plant + POL/POD) instead of COSTPERKM.
+            # prefer HORSE-PUERTO Eur/km (Plant + POL/POD), but keep COSTPERKM
+            # as fallback when the plant/port combination is missing.
             if incoterm_row in {"CIF", "FOB", "FCA"} and pol and pod:
                 hp_leg1 = get_hp_eur_per_km(supplier_canon, str(pol))
                 hp_leg3 = get_hp_eur_per_km(dest_plant_canon, str(pod))
-                eurpkm_leg1 = hp_leg1
-                eurpkm_leg3 = hp_leg3
                 if hp_leg1 is None:
-                    debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg1 (Plant+POL)")
+                    if eurpkm_leg1 is not None:
+                        debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg1 (Plant+POL); se usa COSTPERKM")
+                    else:
+                        debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg1 (Plant+POL)")
+                else:
+                    eurpkm_leg1 = hp_leg1
                 if hp_leg3 is None:
-                    debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg3 (Plant+POD)")
+                    if eurpkm_leg3 is not None:
+                        debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg3 (Plant+POD); se usa COSTPERKM")
+                    else:
+                        debug_msgs.append("Falta Eur/km HORSE-PUERTO para leg3 (Plant+POD)")
+                else:
+                    eurpkm_leg3 = hp_leg3
 
         # KM computation (fully dynamic via coordinates)
         leg1_km = None
