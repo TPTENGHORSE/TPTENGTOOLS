@@ -8,6 +8,8 @@ import tempfile
 import urllib.request
 from datetime import datetime
 
+import pandas as pd
+
 from Quotations.qtool_loader import load_input_template
 from Quotations import generate_quote as gq
 from Quotations.generate_quote import build_output
@@ -179,6 +181,22 @@ elif menu == "MyQuotes":
                 input_df = load_input_template(in_path, sheet="Input")
                 out_path = next_qflow_output_path(runtime_qtool_dir)
                 build_output(input_df, out_path)
+
+                preview_cols = [
+                    "Supplier/Plant",
+                    "Origin Country",
+                    "Destination Plant",
+                    "Destination Country",
+                    "Total Transportation Cost (€)",
+                    "pack/cont 40ft",
+                    "Plant to plant (€/part)",
+                    "Transit Time",
+                ]
+                preview_df = pd.read_excel(out_path, sheet_name="Quote")
+                preview_df = preview_df[[c for c in preview_cols if c in preview_df.columns]].copy()
+
+                st.subheader("Quotation Preview")
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
                 with open(out_path, "rb") as f:
                     out_bytes = f.read()
