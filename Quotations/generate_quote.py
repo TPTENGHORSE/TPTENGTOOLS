@@ -1369,6 +1369,8 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             key_u = (city or "").strip().upper()
             key_c = _canon(city)
             # Manual fallback requested by user
+            if cc_u == "CN" and key_c == "YIWU":
+                return 29.3151, 120.0768
             if cc_u == "CN" and key_u == "WUHAN":
                 return 30.5928, 114.3055
             if cc_u == "MA" and key_u == "TANGER":
@@ -1453,6 +1455,8 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if not z_u:
                 return None, None
             # Manual fallback requested by user
+            if cc_u == "CN" and z_u == "322000":
+                return 29.3151, 120.0768
             if cc_u == "CN" and z_u == "430000":
                 return 30.5928, 114.3055
             if cc_u == "MA" and z_u == "90010":
