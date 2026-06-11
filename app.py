@@ -64,7 +64,7 @@ elif menu == "VTTs":
 
 elif menu == "MyQuotes":
     st.title("MyQuotes")
-    st.caption("Upload Quotation Template _INPUT and download the generated Horse_TPTQuotation.")
+    st.caption("Upload your quotation template and generate your Horse TPT quotation report")
 
     def _secret_or_env(name: str) -> str:
         try:
