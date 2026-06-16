@@ -180,7 +180,7 @@ elif menu == "MyQuotes":
 
                 input_df = load_input_template(in_path, sheet="Input")
                 out_path = next_qflow_output_path(runtime_qtool_dir)
-                build_output(input_df, out_path)
+                preview_df = build_output(input_df, out_path, source_workbook_path=in_path)
 
                 preview_cols = [
                     "Supplier/Plant",
@@ -192,7 +192,6 @@ elif menu == "MyQuotes":
                     "Plant to plant (€/part)",
                     "Transit Time",
                 ]
-                preview_df = pd.read_excel(out_path, sheet_name="Quote")
                 preview_df = preview_df[[c for c in preview_cols if c in preview_df.columns]].copy()
 
                 st.subheader("Quotation Preview")

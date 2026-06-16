@@ -5,6 +5,8 @@ import unicodedata
 from datetime import datetime
 import pandas as pd
 from typing import Iterable, Optional, Tuple
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import PatternFill
 from openpyxl.utils import get_column_letter
 try:
@@ -156,7 +158,75 @@ def _load_reference_quote_columns() -> list[str] | None:
         return None
 
 
-def build_output(input_df: pd.DataFrame, out_path: str):
+def _load_output_workbook(source_workbook_path: str | None) -> Workbook:
+    if source_workbook_path and os.path.exists(source_workbook_path):
+        return load_workbook(source_workbook_path, data_only=False)
+    wb = Workbook()
+    default_ws = wb.active
+    wb.remove(default_ws)
+    return wb
+
+
+def _write_dataframe_to_sheet(ws, df: pd.DataFrame):
+    for row in dataframe_to_rows(df, index=False, header=True):
+        ws.append(row)
+
+
+def _quote_formula_map(header_to_idx: dict[str, int], row_idx: int) -> dict[str, str]:
+    def ref(column_name: str) -> str | None:
+        idx = header_to_idx.get(column_name)
+        if not idx:
+            return None
+        return f"{get_column_letter(idx)}{row_idx}"
+
+    formulas: dict[str, str] = {}
+
+    leg1 = ref("Leg1 Inland Cost (€)")
+    leg2 = ref("Leg2 Overseas Cost (€)")
+    leg3 = ref("Leg 3 Inland Cost (€)")
+    total = ref("Total Transportation Cost (€)")
+    pkg_vol = ref("Packaging Volume (m³)")
+    pkg_snp = ref("SNP_Pack")
+    pack_per_cont = ref("pack/cont 40ft")
+    weight_full = ref("Weight full pack (kg)")
+    part_vol = ref("Part volume(m3/part)")
+    plant_to_plant_m3 = ref("Plant to plant (€/m3)")
+    unit_cost = ref("PN Unit cost (€)")
+    transit_time = ref("Transit Time")
+    plant_to_plant_part = ref("Plant to plant (€/part)")
+    floating_stock = ref("Floating Stock €/Part")
+    annual_needs = ref("Anual Needs (PN / Year)")
+    daily_need = ref("Daily Need (PN / Day)")
+
+    if total and leg1 and leg2 and leg3:
+        formulas["Total Transportation Cost (€)"] = f"=SUM({leg1},{leg2},{leg3})"
+    if part_vol and pkg_vol and pkg_snp:
+        formulas["Part volume(m3/part)"] = f'=IFERROR(IF({pkg_snp}>0,{pkg_vol}/{pkg_snp},""),"")'
+    if pack_per_cont and pkg_vol:
+        formulas["vol/cont 40ft (m3)"] = f'=IFERROR({pack_per_cont}*{pkg_vol},"")'
+    if pack_per_cont and weight_full:
+        formulas["weight/cont 40ft (kg)"] = f'=IFERROR({pack_per_cont}*{weight_full},"")'
+    if total and pack_per_cont and pkg_vol:
+        formulas["Plant to plant (€/m3)"] = (
+            f'=IFERROR(IF(({pack_per_cont}*{pkg_vol})>0,{total}/({pack_per_cont}*{pkg_vol}),""),"")'
+        )
+    if part_vol and plant_to_plant_m3:
+        formulas["Plant to plant (€/part)"] = f'=IFERROR({part_vol}*{plant_to_plant_m3},"")'
+    if unit_cost and transit_time:
+        formulas["Floating Stock €/Part"] = f'=IFERROR({unit_cost}*0.08/365*{transit_time},"")'
+    if unit_cost and plant_to_plant_part and floating_stock:
+        formulas["PA + LOG + SF TOTAL €/Part"] = f'=IFERROR({unit_cost}+{plant_to_plant_part}+{floating_stock},"")'
+    if annual_needs and header_to_idx.get("PA + LOG + SF TOTAL €/Part"):
+        pa_total = ref("PA + LOG + SF TOTAL €/Part")
+        if pa_total:
+            formulas["Annual weight K€"] = f'=IFERROR({annual_needs}*{pa_total}/1000,"")'
+    if daily_need and unit_cost and transit_time:
+        formulas["FCF Pipe K€"] = f'=IFERROR({daily_need}*{unit_cost}*{transit_time}/1000,"")'
+
+    return formulas
+
+
+def build_output(input_df: pd.DataFrame, out_path: str, source_workbook_path: str | None = None) -> pd.DataFrame:
     # Load data sources
     data_file = find_qtool_data_file()
     if not data_file:
@@ -1113,6 +1183,8 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         if not z:
             return False
         cc = (cc or "").strip().upper()
+        if cc == "CN":
+            return z.isdigit() and len(z) == 6
         if cc == "ES":
             return z.isdigit() and len(z) == 5
         if cc == "IN":
@@ -1123,6 +1195,12 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             return z.isdigit() and len(z) == 5
         # Default: accept 3-10 alphanumeric
         return 3 <= len(z) <= 10
+
+    def _zip_from_cn_backup(city: str) -> str | None:
+        key = _canon(city)
+        if not key:
+            return None
+        return CN_CITY_DEFAULT_ZIP.get(key)
 
     # NOTE: No ZIP enrichment from HORSE-PUERTO. ZIPs must come from CITY_ZIPS (or alias) per data-first policy.
 
@@ -1167,9 +1245,42 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             return None
         return None
 
+    # Representative ZIP fallback for key China industrial/logistics cities.
+    # Used only when CITY_ZIPS (and alias lookup) cannot resolve a valid ZIP.
+    CN_CITY_REP_ZIP = {
+        "SHANGHAI": "200000",
+        "NINGBO": "315000",
+        "SHENZHEN": "518000",
+        "GUANGZHOU": "510000",
+        "DONGGUAN": "523000",
+        "SUZHOU": "215000",
+        "WUXI": "214000",
+        "HANGZHOU": "310000",
+        "YIWU": "322000",
+        "QINGDAO": "266000",
+        "TIANJIN": "300000",
+        "DALIAN": "116000",
+        "XIAMEN": "361000",
+        "FUZHOU": "350000",
+        "FOSHAN": "528000",
+        "ZHONGSHAN": "528400",
+        "ZHUHAI": "519000",
+        "CHONGQING": "400000",
+        "CHENGDU": "610000",
+        "WUHAN": "430000",
+        "CHANGSHA": "410000",
+        "JINAN": "250000",
+        "NANJING": "210000",
+        "ZHENGZHOU": "450000",
+    }
+
+    def _cn_rep_zip_from_city(city: str) -> str | None:
+        city_canon = _canon(city)
+        return CN_CITY_REP_ZIP.get(city_canon)
+
     def validate_and_enrich_zip(cc: str, city: str, zip_in: str) -> tuple[str, str | None]:
         """Return (zip_out, reason) if we corrected/assigned a ZIP using city+country context.
-        Reasons: 'city_zips', 'alias_city_zips', None if unchanged or no candidate.
+        Reasons: 'city_zips', 'alias_city_zips', 'cn_city_backup', None if unchanged or no candidate.
         """
         z = _normalize_zip_token(zip_in)
         if _country_zip_is_valid(cc, z):
@@ -1187,6 +1298,12 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             z3n = _normalize_zip_token(z3)
             if z3n and _country_zip_is_valid(cc, z3n):
                 return z3n, "alias_city_zips"
+        # China fallback map from representative industrial city ZIPs.
+        if (cc or "").strip().upper() == "CN":
+            z4 = _cn_rep_zip_from_city(city_u)
+            z4n = _normalize_zip_token(z4)
+            if z4n and _country_zip_is_valid(cc, z4n):
+                return z4n, "cn_city_backup"
         # No change
         return z, None
 
@@ -1369,10 +1486,34 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             key_u = (city or "").strip().upper()
             key_c = _canon(city)
             # Manual fallback requested by user
-            if cc_u == "CN" and key_c == "YIWU":
-                return 29.3151, 120.0768
-            if cc_u == "CN" and key_u == "WUHAN":
-                return 30.5928, 114.3055
+            CN_CITY_COORDS_BACKUP = {
+                "SHANGHAI": (31.2304, 121.4737),
+                "NINGBO": (29.8683, 121.5440),
+                "SHENZHEN": (22.5431, 114.0579),
+                "GUANGZHOU": (23.1291, 113.2644),
+                "DONGGUAN": (23.0207, 113.7518),
+                "SUZHOU": (31.2989, 120.5853),
+                "WUXI": (31.4900, 120.3119),
+                "HANGZHOU": (30.2741, 120.1551),
+                "YIWU": (29.3151, 120.0768),
+                "QINGDAO": (36.0671, 120.3826),
+                "TIANJIN": (39.3434, 117.3616),
+                "DALIAN": (38.9140, 121.6147),
+                "XIAMEN": (24.4798, 118.0894),
+                "FUZHOU": (26.0745, 119.2965),
+                "FOSHAN": (23.0215, 113.1214),
+                "ZHONGSHAN": (22.5176, 113.3928),
+                "ZHUHAI": (22.2707, 113.5767),
+                "CHONGQING": (29.5630, 106.5516),
+                "CHENGDU": (30.5728, 104.0668),
+                "WUHAN": (30.5928, 114.3055),
+                "CHANGSHA": (28.2282, 112.9388),
+                "JINAN": (36.6512, 117.1201),
+                "NANJING": (32.0603, 118.7969),
+                "ZHENGZHOU": (34.7473, 113.6249),
+            }
+            if cc_u == "CN" and key_c in CN_CITY_COORDS_BACKUP:
+                return CN_CITY_COORDS_BACKUP[key_c]
             if cc_u == "MA" and key_u == "TANGER":
                 return 35.7595, -5.8340
             if cc_u == "CZ" and key_c in {"FRENSTAT POD RADHOSTEM", "FRENSTAT"}:
@@ -1455,10 +1596,35 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if not z_u:
                 return None, None
             # Manual fallback requested by user
-            if cc_u == "CN" and z_u == "322000":
-                return 29.3151, 120.0768
-            if cc_u == "CN" and z_u == "430000":
-                return 30.5928, 114.3055
+            CN_ZIP_COORDS_BACKUP = {
+                "200000": (31.2304, 121.4737),
+                "202150": (31.2304, 121.4737),
+                "315000": (29.8683, 121.5440),
+                "518000": (22.5431, 114.0579),
+                "510000": (23.1291, 113.2644),
+                "523000": (23.0207, 113.7518),
+                "215000": (31.2989, 120.5853),
+                "214000": (31.4900, 120.3119),
+                "310000": (30.2741, 120.1551),
+                "322000": (29.3151, 120.0768),
+                "266000": (36.0671, 120.3826),
+                "300000": (39.3434, 117.3616),
+                "116000": (38.9140, 121.6147),
+                "361000": (24.4798, 118.0894),
+                "350000": (26.0745, 119.2965),
+                "528000": (23.0215, 113.1214),
+                "528400": (22.5176, 113.3928),
+                "519000": (22.2707, 113.5767),
+                "400000": (29.5630, 106.5516),
+                "610000": (30.5728, 104.0668),
+                "430000": (30.5928, 114.3055),
+                "410000": (28.2282, 112.9388),
+                "250000": (36.6512, 117.1201),
+                "210000": (32.0603, 118.7969),
+                "450000": (34.7473, 113.6249),
+            }
+            if cc_u == "CN" and z_u in CN_ZIP_COORDS_BACKUP:
+                return CN_ZIP_COORDS_BACKUP[z_u]
             if cc_u == "MA" and z_u == "90010":
                 return 35.7595, -5.8340
             if cc_u == "CZ" and z_u == "74401":
@@ -1570,6 +1736,9 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         "HORSE BRAZIL": "HORSE BRAZIL",
         "HORSE VALLADOLID": "HORSE MOTORES",
         "HORSE MOTORES": "HORSE MOTORES",
+        "HORSE CLEON": "CLEON",
+        "HORSE CLÉON": "CLEON",
+        "CLEON": "CLEON",
         "WEST HORSE POWERTRAIN PORTUGAL": "HORSE CACIA",
         "HORSE CACIA": "HORSE CACIA",
     }
@@ -1709,9 +1878,61 @@ def build_output(input_df: pd.DataFrame, out_path: str):
         "MAROKKO": "MA",
     }
 
+    # User-provided backup data: representative ZIP per CN city/region for coordinate fallback.
+    CN_CITY_DEFAULT_ZIP = {
+        "SHANGHAI": "200000",
+        "NINGBO": "315000",
+        "SHENZHEN": "518000",
+        "GUANGZHOU": "510000",
+        "DONGGUAN": "523000",
+        "SUZHOU": "215000",
+        "WUXI": "214000",
+        "HANGZHOU": "310000",
+        "YIWU": "322000",
+        "QINGDAO": "266000",
+        "TIANJIN": "300000",
+        "DALIAN": "116000",
+        "XIAMEN": "361000",
+        "FUZHOU": "350000",
+        "FOSHAN": "528000",
+        "ZHONGSHAN": "528400",
+        "ZHUHAI": "519000",
+        "CHONGQING": "400000",
+        "CHENGDU": "610000",
+        "WUHAN": "430000",
+        "CHANGSHA": "410000",
+        "JINAN": "250000",
+        "NANJING": "210000",
+        "ZHENGZHOU": "450000",
+    }
+
+    ISO3_TO_ISO2 = {
+        "CHN": "CN",
+        "ESP": "ES",
+        "FRA": "FR",
+        "DEU": "DE",
+        "GBR": "GB",
+        "IND": "IN",
+        "BRA": "BR",
+        "TUR": "TR",
+        "MAR": "MA",
+        "PRT": "PT",
+        "ITA": "IT",
+        "NLD": "NL",
+        "POL": "PL",
+        "CZE": "CZ",
+        "SVK": "SK",
+        "USA": "US",
+        "MEX": "MX",
+        "JPN": "JP",
+        "KOR": "KR",
+    }
+
     def coerce_country_code(raw_code: str | None, raw_name: str | None) -> str:
         code = (raw_code or "").strip().upper()
-        if len(code) in (2, 3):
+        if len(code) == 3:
+            return ISO3_TO_ISO2.get(code, code)
+        if len(code) == 2:
             return code
         name = (raw_name or "").strip().upper()
         # First try HORSE-PUERTO mapping
@@ -1980,8 +2201,8 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if oc_zip_final:
                 lat, lon, src = resolve_point(geo, oc, zip_code=oc_zip_final)
                 tried.append(f"zip:{oc_zip_final}")
-                # Accept only if truly resolved by ZIP, not country fallback
-                if lat is not None and src.startswith("zip:"):
+                # Accept ZIP resolution from both local GEO ZIP and pgeocode ZIP fallbacks.
+                if lat is not None and src.startswith(("zip:", "pgeocode_zip:")):
                     olat, olon, osrc = lat, lon, src
                 elif olat is None:
                     la, lo = _zip_coords_from_db(oc, oc_zip_final)
@@ -1990,7 +2211,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             if olat is None and oc_city_norm:
                 lat, lon, src = resolve_point(geo, oc, city=oc_city_norm)
                 tried.append(f"city:{oc_city_norm}")
-                if lat is not None and src.startswith("city:"):
+                if lat is not None and src.startswith(("city:", "pgeocode_city_exact:", "pgeocode_city_contains:")):
                     olat, olon, osrc = lat, lon, src
             # City alias fallback from database (e.g., Mundhwa -> Pune)
             if olat is None and oc_city_norm:
@@ -1998,7 +2219,7 @@ def build_output(input_df: pd.DataFrame, out_path: str):
                 if alias:
                     lat, lon, src = resolve_point(geo, oc, city=alias)
                     tried.append(f"city-alias:{oc_city_norm}->{alias}")
-                    if lat is not None and src.startswith("city:"):
+                    if lat is not None and src.startswith(("city:", "pgeocode_city_exact:", "pgeocode_city_contains:")):
                         olat, olon, osrc = lat, lon, src + "(alias)"
             if olat is None and supplier_canon:
                 lat, lon, src = resolve_point(geo, oc, plant=supplier_canon)
@@ -2046,6 +2267,12 @@ def build_output(input_df: pd.DataFrame, out_path: str):
                 la, lo, used = _city_coords_online(oc, oc_city_norm)
                 if used and la is not None:
                     olat, olon, osrc = la, lo, "nominatim"
+            if olat is None:
+                # Last-resort backup: country centroid (if available in GEO index)
+                la, lo, src = resolve_point(geo, oc)
+                if la is not None and src.startswith("country:"):
+                    olat, olon, osrc = la, lo, src
+                    debug_msgs.append("Origen resuelto por centro de país (backup)")
             if olat is None:
                 debug_msgs.append("Origen no resuelto: intentos " + ", ".join(tried) if tried else "Origen no resuelto (sin datos)")
 
@@ -2439,84 +2666,104 @@ def build_output(input_df: pd.DataFrame, out_path: str):
             data[c] = pd.Series([""] * n)
     final_quote_df = pd.DataFrame(data, columns=cols)
 
-    with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
-        input_df.to_excel(writer, sheet_name="Input", index=False)
-        final_quote_df.to_excel(writer, sheet_name="Quote", index=False)
+    wb = _load_output_workbook(source_workbook_path)
 
-        # Highlight all Quote headers in yellow.
-        quote_ws = writer.book["Quote"]
-        yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-        for cell in quote_ws[1]:
-            cell.fill = yellow_fill
+    if "Input" not in wb.sheetnames:
+        input_ws = wb.create_sheet("Input", 0)
+        _write_dataframe_to_sheet(input_ws, input_df)
 
-        # Adjust Quote column widths from B to AL based on content length.
-        for col_idx in range(2, 39):  # B..AL
-            max_len = 0
-            for row in quote_ws.iter_rows(min_row=1, max_row=quote_ws.max_row, min_col=col_idx, max_col=col_idx):
-                val = row[0].value
-                if val is None:
-                    continue
-                txt = str(val)
-                if len(txt) > max_len:
-                    max_len = len(txt)
-            quote_ws.column_dimensions[get_column_letter(col_idx)].width = max(12, min(max_len + 2, 45))
+    for sheet_name in ("Quote", "Summary"):
+        if sheet_name in wb.sheetnames:
+            wb.remove(wb[sheet_name])
 
-        # Force 2-decimal display in key numeric result columns.
-        two_dec_cols = {
-            "Leg1/POL Distance (km)",
-            "LEG3/POD Distance (km)",
-            "Transit Time",
-            "Leg1 Inland Cost (€)",
-            "Leg2 Overseas Cost (€)",
-            "Leg 3 Inland Cost (€)",
-            "Total Transportation Cost (€)",
-            "Packaging Volume (m³)",
-            "SNP_Pack",
-            "Part volume(m3/part)",
-            "pack/cont 40ft",
-            "vol/cont 40ft (m3)",
-            "weight/cont 40ft (kg)",
-            "Plant to plant (€/m3)",
-            "Plant to plant (€/part)",
-            "Floating Stock €/Part",
-            "PA + LOG + SF TOTAL €/Part",
-            "Annual weight K€",
-            "FCF Pipe K€",
-            "Weight/part (kg)",
-            "Weight empty pack (kg)",
-            "Weight full pack (kg)",
-        }
-        header_to_idx = {str(c.value): i + 1 for i, c in enumerate(quote_ws[1])}
-        for h in two_dec_cols:
-            idx = header_to_idx.get(h)
-            if not idx:
+    quote_ws = wb.create_sheet("Quote")
+    _write_dataframe_to_sheet(quote_ws, final_quote_df)
+
+    # Highlight all Quote headers in yellow.
+    yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    for cell in quote_ws[1]:
+        cell.fill = yellow_fill
+
+    header_to_idx = {str(c.value): i + 1 for i, c in enumerate(quote_ws[1])}
+    for row_idx in range(2, quote_ws.max_row + 1):
+        for header, formula in _quote_formula_map(header_to_idx, row_idx).items():
+            col_idx = header_to_idx.get(header)
+            if col_idx:
+                quote_ws.cell(row=row_idx, column=col_idx, value=formula)
+
+    # Adjust Quote column widths from B to AL based on content length.
+    for col_idx in range(2, 39):  # B..AL
+        max_len = 0
+        for row in quote_ws.iter_rows(min_row=1, max_row=quote_ws.max_row, min_col=col_idx, max_col=col_idx):
+            val = row[0].value
+            if val is None:
                 continue
-            for row in quote_ws.iter_rows(min_row=2, max_row=quote_ws.max_row, min_col=idx, max_col=idx):
-                cell = row[0]
-                if isinstance(cell.value, (int, float)):
-                    cell.number_format = "0.00"
+            txt = str(val)
+            if len(txt) > max_len:
+                max_len = len(txt)
+        quote_ws.column_dimensions[get_column_letter(col_idx)].width = max(12, min(max_len + 2, 45))
 
-        # Specific precision override: part volume needs 4 decimals.
-        idx_part_vol = header_to_idx.get("Part volume(m3/part)")
-        if idx_part_vol:
-            for row in quote_ws.iter_rows(min_row=2, max_row=quote_ws.max_row, min_col=idx_part_vol, max_col=idx_part_vol):
-                cell = row[0]
-                if isinstance(cell.value, (int, float)):
-                    cell.number_format = "0.0000"
+    # Force 2-decimal display in key numeric result columns.
+    two_dec_cols = {
+        "Leg1/POL Distance (km)",
+        "LEG3/POD Distance (km)",
+        "Transit Time",
+        "Leg1 Inland Cost (€)",
+        "Leg2 Overseas Cost (€)",
+        "Leg 3 Inland Cost (€)",
+        "Total Transportation Cost (€)",
+        "Packaging Volume (m³)",
+        "SNP_Pack",
+        "pack/cont 40ft",
+        "vol/cont 40ft (m3)",
+        "weight/cont 40ft (kg)",
+        "Plant to plant (€/m3)",
+        "Plant to plant (€/part)",
+        "Floating Stock €/Part",
+        "PA + LOG + SF TOTAL €/Part",
+        "Annual weight K€",
+        "FCF Pipe K€",
+        "Weight/part (kg)",
+        "Weight empty pack (kg)",
+        "Weight full pack (kg)",
+    }
+    for h in two_dec_cols:
+        idx = header_to_idx.get(h)
+        if not idx:
+            continue
+        for row in quote_ws.iter_rows(min_row=2, max_row=quote_ws.max_row, min_col=idx, max_col=idx):
+            row[0].number_format = "0.00"
 
-        if "incoterm" in input_df.columns:
-            inc_series = input_df["incoterm"].dropna()
-            used_incoterms = sorted(set([str(x).upper().strip() for x in inc_series.tolist()]))
-        else:
-            used_incoterms = []
-        incoterm_summary = ", ".join(used_incoterms) if used_incoterms else DEFAULT_INCOTERM
-        summary = pd.DataFrame({
-            "Generated": [datetime.now().isoformat(sep=" ", timespec="seconds")],
-            "Rows": [len(input_df)],
-            "Incoterms": [incoterm_summary],
-            "Note": ["Incoterm aplicado por fila (fallback al global si vacío/incorrecto)"],
-        })
-        summary.to_excel(writer, sheet_name="Summary", index=False)
+    # Specific precision override: part volume needs 4 decimals.
+    idx_part_vol = header_to_idx.get("Part volume(m3/part)")
+    if idx_part_vol:
+        for row in quote_ws.iter_rows(min_row=2, max_row=quote_ws.max_row, min_col=idx_part_vol, max_col=idx_part_vol):
+            row[0].number_format = "0.0000"
+
+    if "incoterm" in input_df.columns:
+        inc_series = input_df["incoterm"].dropna()
+        used_incoterms = sorted(set([str(x).upper().strip() for x in inc_series.tolist()]))
+    else:
+        used_incoterms = []
+    incoterm_summary = ", ".join(used_incoterms) if used_incoterms else DEFAULT_INCOTERM
+    summary = pd.DataFrame({
+        "Generated": [datetime.now().isoformat(sep=" ", timespec="seconds")],
+        "Rows": [len(input_df)],
+        "Incoterms": [incoterm_summary],
+        "Note": ["Incoterm aplicado por fila (fallback al global si vacío/incorrecto)"],
+    })
+    summary_ws = wb.create_sheet("Summary")
+    _write_dataframe_to_sheet(summary_ws, summary)
+
+    try:
+        wb.calculation.calcMode = "auto"
+        wb.calculation.fullCalcOnLoad = True
+        wb.calculation.forceFullCalc = True
+    except Exception:
+        pass
+
+    wb.save(out_path)
+    return final_quote_df
 
 
 def main():
@@ -2531,7 +2778,7 @@ def main():
         return
     out_path = next_output_path(QTOOL_DIR)
     try:
-        build_output(df, out_path)
+        build_output(df, out_path, source_workbook_path=INPUT_FILE)
     except FileNotFoundError as e:
         print(f"ERROR: {e}")
         return
