@@ -3,6 +3,7 @@ import re
 import sys
 import unicodedata
 from datetime import datetime
+from functools import lru_cache
 import pandas as pd
 from typing import Iterable, Optional, Tuple
 from openpyxl import Workbook, load_workbook
@@ -57,6 +58,122 @@ INPUT_FILE = os.path.join(QTOOL_DIR, "upload_Quotation Template.xlsx")
 OUTPUT_PREFIX = "Horse_TPTQuotation"
 OUTPUT_EXT = ".xlsx"
 DEFAULT_INCOTERM = os.environ.get("QINCOTERM", "FCA")
+
+
+def _canon_cn_location_key(text: str | None) -> str:
+    if not text:
+        return ""
+    try:
+        normalized = ''.join(ch for ch in unicodedata.normalize('NFKD', str(text)) if not unicodedata.combining(ch))
+    except Exception:
+        normalized = str(text)
+    normalized = normalized.upper()
+    normalized = re.sub(r"[\./,;:_\-]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _scale_cn_location_coord(raw_value, max_abs: float) -> float | None:
+    try:
+        if pd.isna(raw_value):
+            return None
+        value = float(str(raw_value).strip())
+    except Exception:
+        return None
+    if value == 0:
+        return 0.0
+    while abs(value) > max_abs:
+        value /= 10.0
+    return value if abs(value) <= max_abs else None
+
+
+@lru_cache(maxsize=1)
+def _load_cn_locations_city_index() -> dict[str, tuple[float, float]]:
+    path = os.path.join(os.path.dirname(__file__), "CN_LOCATIONS.xlsx")
+    if not os.path.exists(path):
+        return {}
+
+    preferred_feature_order = {
+        "AIRP": 0,
+        "PPLC": 0,
+        "PPLA": 1,
+        "PPLA2": 2,
+        "PPLA3": 3,
+        "PPLA4": 4,
+        "PRT": 5,
+        "PPL": 6,
+        "PPLL": 7,
+        "PPLX": 8,
+        "ADM1": 9,
+        "ADM2": 10,
+        "ADM3": 11,
+    }
+    best_by_key: dict[str, tuple[float, float, int, int]] = {}
+
+    try:
+        df_cn = pd.read_excel(path, sheet_name=0, header=None, dtype=str)
+        for _, row in df_cn.iterrows():
+            try:
+                country_code = str(row.iloc[8]).strip().upper()
+            except Exception:
+                continue
+            if country_code != "CN":
+                continue
+
+            try:
+                feature_class = str(row.iloc[6]).strip().upper()
+                feature_code = str(row.iloc[7]).strip().upper()
+            except Exception:
+                continue
+
+            feature_rank = preferred_feature_order.get(feature_code)
+            if feature_rank is None:
+                if feature_class == "P":
+                    feature_rank = 20
+                elif feature_class == "A":
+                    feature_rank = 30
+                else:
+                    continue
+
+            lat = _scale_cn_location_coord(row.iloc[4], 90.0)
+            lon = _scale_cn_location_coord(row.iloc[5], 180.0)
+            if lat is None or lon is None:
+                continue
+
+            try:
+                population = int(float(str(row.iloc[14]).strip())) if pd.notna(row.iloc[14]) and str(row.iloc[14]).strip() else 0
+            except Exception:
+                population = 0
+
+            score = (feature_rank, -population)
+            raw_names = {
+                str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else "",
+                str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else "",
+            }
+            if len(row) > 3 and pd.notna(row.iloc[3]):
+                raw_names.update(part.strip() for part in str(row.iloc[3]).split(","))
+
+            for raw_name in raw_names:
+                key = _canon_cn_location_key(raw_name)
+                if not key:
+                    continue
+                prev = best_by_key.get(key)
+                if prev is None or score < (prev[2], prev[3]):
+                    best_by_key[key] = (lat, lon, feature_rank, -population)
+    except Exception:
+        return {}
+
+    return {key: (lat, lon) for key, (lat, lon, _, _) in best_by_key.items()}
+
+
+def _lookup_cn_locations_city_coords(city: str | None) -> tuple[float | None, float | None]:
+    key = _canon_cn_location_key(city)
+    if not key:
+        return None, None
+    coords = _load_cn_locations_city_index().get(key)
+    if coords is None:
+        return None, None
+    return coords
 
 
 def find_qtool_data_file() -> str | None:
@@ -1568,6 +1685,10 @@ def build_output(input_df: pd.DataFrame, out_path: str, source_workbook_path: st
                                 return float(la), float(lo)
             except Exception:
                 pass
+            if cc_u == "CN":
+                la, lo = _lookup_cn_locations_city_coords(city)
+                if la is not None and lo is not None:
+                    return la, lo
         except Exception:
             return None, None
         return None, None
@@ -1994,11 +2115,20 @@ def build_output(input_df: pd.DataFrame, out_path: str, source_workbook_path: st
             debug_msgs.append(str(pkg_data.get("pkg_debug")))
         oc = coerce_country_code(r.get("origin_country_code"), r.get("origin_country"))
         dc = coerce_country_code(r.get("dest_country_code"), r.get("dest_country"))
+        road_pair_eur_per_km = get_pair_eur_per_km(oc, dc)
+        road_pair_tt_days = get_pair_tt_road(oc, dc)
         # Business rule: Morocco -> Europe RoRo moves are handled as Inland transport.
         if is_morocco_europe_roro_route(oc, dc):
             type_of_flow = "Inland"
             included_legs = [1]
             debug_msgs.append("Ruta especial MA->Europa por RoRo: tratada como Inland")
+        elif incoterm_row == "FCA" and road_pair_eur_per_km is not None:
+            type_of_flow = "Inland"
+            included_legs = [1]
+            if road_pair_tt_days is not None:
+                debug_msgs.append(f"Ruta FCA por carretera: tratada como Inland ({oc}->{dc}, TT_ROAD={road_pair_tt_days:g})")
+            else:
+                debug_msgs.append(f"Ruta FCA por carretera: tratada como Inland ({oc}->{dc})")
         # If flow is Inland: per requirement, compute ONLY Leg1 (road from origin country to destination country)
         elif str(type_of_flow).strip().upper() == "INLAND":
             included_legs = [1]
@@ -2121,9 +2251,9 @@ def build_output(input_df: pd.DataFrame, out_path: str, source_workbook_path: st
             ocean_rate, tt_days = None, None
         # €/km lookups + Transit Time by flow
         if str(type_of_flow).strip().upper() == "INLAND":
-            eurpkm_leg1 = get_pair_eur_per_km(oc, dc)
+            eurpkm_leg1 = road_pair_eur_per_km if road_pair_eur_per_km is not None else get_pair_eur_per_km(oc, dc)
             eurpkm_leg3 = None
-            transit_time_days = get_pair_tt_road(oc, dc)
+            transit_time_days = road_pair_tt_days if road_pair_tt_days is not None else get_pair_tt_road(oc, dc)
         else:
             eurpkm_leg1 = get_domestic_eur_per_km(oc)
             eurpkm_leg3 = get_domestic_eur_per_km(dc)
