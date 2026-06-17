@@ -292,7 +292,7 @@ def main():
     with col_right:
         if 'calculate' in locals() and calculate:
             st.markdown("<h3 style='text-align: center;'>3D UMs Distribution</h3>", unsafe_allow_html=True)
-            dibuja_cajas_3d(operative_dim, box_dim, distribuciones, max_cajas=realistic_ucm, titulo="Limited by max volume & weight")
+            dibuja_cajas_3d(operative_dim, rotation, distribuciones, max_cajas=realistic_ucm, titulo="Limited by max volume & weight")
 
 def run():
     main()
