@@ -58,6 +58,7 @@ INPUT_FILE = os.path.join(QTOOL_DIR, "upload_Quotation Template.xlsx")
 OUTPUT_PREFIX = "Horse_TPTQuotation"
 OUTPUT_EXT = ".xlsx"
 DEFAULT_INCOTERM = os.environ.get("QINCOTERM", "FCA")
+OUTPUT_AUTHOR = "MyQuotes_TPT_ENG"
 
 
 def _canon_cn_location_key(text: str | None) -> str:
@@ -2892,6 +2893,12 @@ def build_output(input_df: pd.DataFrame, out_path: str, source_workbook_path: st
         wb.calculation.calcMode = "auto"
         wb.calculation.fullCalcOnLoad = True
         wb.calculation.forceFullCalc = True
+    except Exception:
+        pass
+
+    try:
+        wb.properties.creator = OUTPUT_AUTHOR
+        wb.properties.lastModifiedBy = OUTPUT_AUTHOR
     except Exception:
         pass
 
