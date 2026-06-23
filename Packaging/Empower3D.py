@@ -287,7 +287,7 @@ def main():
             total_pn_ut = pn_ucm * realistic_ucm
             st.write(f"🧮 Total PN/Transport Type: **{total_pn_ut:,.0f}**")
             densidad = realistic_weight / realistic_volume if realistic_volume > 0 else 0
-            st.write(f"🧪 Densidad: **{densidad:.0f} kg/m³**")
+            st.write(f"🧪 Density: **{densidad:.0f} kg/m³**")
 
     with col_right:
         if 'calculate' in locals() and calculate:
