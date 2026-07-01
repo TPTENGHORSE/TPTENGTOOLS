@@ -335,11 +335,11 @@ def main():
         st.markdown('<div class="e3d-sec">⚖️ Weight Parameters</div>', unsafe_allow_html=True)
         peso_col1, peso_col2, peso_col3 = st.columns(3)
         with peso_col1:
-            box_weight_pn = st.number_input("Weight PN (kg)", min_value=0.001, value=10.000, format="%.1f")
+            box_weight_pn = st.number_input("Weight PN (kg)", min_value=0.001, value=10.000, step=0.001, format="%.3f")
         with peso_col2:
             box_weight_ucm = st.number_input("UCM (kg)", min_value=0.01, value=100.0, format="%.1f")
         with peso_col3:
-            pn_ucm = st.number_input("PN/UCM", min_value=0.01, value=100.0, format="%.2f")
+            pn_ucm = st.number_input("PN/UCM", min_value=1, value=100, step=1)
         box_weight = (box_weight_pn * pn_ucm) + box_weight_ucm
 
         # Stackability
