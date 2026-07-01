@@ -72,7 +72,7 @@ def calcula_cajas(contenedor, caja, stacking):
     sobrante_lb = Lc - (nl1b * w1)
 
     # Opción 2: el complemento es (l1 a lo largo de L, w1 a lo largo de W)
-    nl2b = nl1b
+    nl2b = Lc // l1  # cajas del complemento que caben en L (no nl1b que usa w1)
     nw2b = sobrante_wb // w1 if sobrante_wb >= w1 else 0
     nl3b = sobrante_lb // l1 if sobrante_lb >= l1 else 0
     nw3b = Wc // w1 if sobrante_lb >= l1 else 0
@@ -123,9 +123,11 @@ def dibuja_cajas_3d(contenedor, caja_dim, distribuciones, max_cajas=None, titulo
         (distribuciones[3], (l_rot, w_rot), '#D4546A'),  # corner     – red
     ]
     total_cajas = max_cajas if max_cajas is not None else sum(nl * nw * nh for (nl, nw, nh), _, _ in bloques)
-    for idx, (dist, (lx, wx), color) in enumerate(bloques):
-        nl, nw, nh = dist
-        for z in range(nh):
+    all_nh = distribuciones[0][2]  # todas las distribuciones comparten el mismo nh
+    # Iterar z primero: llenar toda la planta antes de apilar
+    for z in range(all_nh):
+        for idx, (dist, (lx, wx), color) in enumerate(bloques):
+            nl, nw, _ = dist
             for x in range(nl):
                 for y in range(nw):
                     if cajas_dibujadas >= total_cajas:
