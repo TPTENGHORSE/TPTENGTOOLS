@@ -357,7 +357,7 @@ def main():
 
         with col_stack1:
             if st.button("➖", key="stack_minus"):
-                if st.session_state.stackability_value > 1:
+                if st.session_state.stackability_value > 0:
                     st.session_state.stackability_value -= 1
         with col_stack2:
             st.markdown(
