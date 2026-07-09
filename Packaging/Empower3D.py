@@ -1,7 +1,8 @@
 import streamlit as st 
+import streamlit.components.v1 as components
+from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 # Dimensiones internas (volumen bruto)
@@ -93,10 +94,7 @@ def calcula_cajas(contenedor, caja, stacking):
 
     return mejor_cantidad, mejor_rotacion, mejor_distribucion
 
-# Dibujo de contenedor con cajas
-
-# Dibuja ambas orientaciones de cajas (principal y rotada) con diferentes colores
-def dibuja_cajas_3d(contenedor, caja_dim, distribuciones, max_cajas=None, titulo=""):
+def build_3d_figure(contenedor, caja_dim, distribuciones, max_cajas=None, titulo=""):
     (nl1, nw1, nh1) = distribuciones[0]
     Lc, Wc, Hc = contenedor
     l, w, h = caja_dim
@@ -158,8 +156,171 @@ def dibuja_cajas_3d(contenedor, caja_dim, distribuciones, max_cajas=None, titulo
     ax.set_zlim(0, Hc)
     ax.view_init(elev=25, azim=45)
     fig.tight_layout(pad=1.5)
+    return fig
+
+
+# Dibujo de contenedor con cajas
+
+# Dibuja ambas orientaciones de cajas (principal y rotada) con diferentes colores
+def dibuja_cajas_3d(contenedor, caja_dim, distribuciones, max_cajas=None, titulo=""):
+    fig = build_3d_figure(contenedor, caja_dim, distribuciones, max_cajas=max_cajas, titulo=titulo)
     st.pyplot(fig)
     plt.close(fig)
+
+
+def _download_ui_screenshot_pdf(file_name="Empower3D_UI_screenshot.pdf"):
+        # Capture the rendered Streamlit interface and export it as an image-based PDF.
+        components.html(
+                f"""
+                <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+                <script>
+                (async function () {{
+                    try {{
+                        const parentDoc = window.parent.document;
+                        const rootEl = parentDoc.querySelector('.stApp') || parentDoc.body;
+
+                        if (!rootEl) {{
+                            alert('No se encontro la UI para capturar.');
+                            return;
+                        }}
+
+                        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+                        const raf = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+                        const resetScrollTop = () => {{
+                            const scrollers = [
+                                parentDoc.querySelector('[data-testid="stAppViewContainer"]'),
+                                parentDoc.querySelector('.main'),
+                                parentDoc.scrollingElement,
+                                parentDoc.documentElement,
+                                parentDoc.body,
+                            ].filter(Boolean);
+
+                            for (const el of scrollers) {{
+                                el.scrollTop = 0;
+                                el.scrollLeft = 0;
+                            }}
+
+                            if (window.parent && typeof window.parent.scrollTo === 'function') {{
+                                window.parent.scrollTo(0, 0);
+                            }}
+                        }};
+
+                        const waitUiStable = async () => {{
+                            const start = Date.now();
+                            const timeoutMs = 5000;
+
+                            while ((Date.now() - start) < timeoutMs) {{
+                                const hasResults = !!parentDoc.querySelector('.e3d-hero');
+                                const has3d = !!parentDoc.querySelector('img[src^="data:image"], canvas');
+                                if (hasResults && has3d) {{
+                                    break;
+                                }}
+                                await wait(120);
+                            }}
+
+                            // Let layout settle after the final paint and font rendering.
+                            await raf();
+                            await raf();
+                            await wait(220);
+                        }};
+
+                        const getCaptureBounds = () => {{
+                            const docEl = parentDoc.documentElement;
+                            const body = parentDoc.body;
+                            const candidates = [
+                                rootEl,
+                                body,
+                                docEl,
+                                parentDoc.querySelector('[data-testid="stAppViewContainer"]'),
+                                parentDoc.querySelector('[data-testid="stMain"]'),
+                                parentDoc.querySelector('[data-testid="stMainBlockContainer"]'),
+                                parentDoc.querySelector('.main'),
+                                parentDoc.querySelector('.block-container'),
+                            ].filter(Boolean);
+
+                            let maxW = 0;
+                            let maxH = 0;
+
+                            for (const el of candidates) {{
+                                maxW = Math.max(maxW, el.scrollWidth || 0, el.clientWidth || 0, el.offsetWidth || 0);
+                                maxH = Math.max(maxH, el.scrollHeight || 0, el.clientHeight || 0, el.offsetHeight || 0);
+                            }}
+
+                            maxW = Math.max(maxW, window.parent.innerWidth || 0);
+                            maxH = Math.max(maxH, window.parent.innerHeight || 0);
+
+                            return {{ width: maxW, height: maxH }};
+                        }};
+
+                        resetScrollTop();
+                        await waitUiStable();
+                        resetScrollTop();
+
+                        const bounds = getCaptureBounds();
+
+                        const canvas = await html2canvas(rootEl, {{
+                            scale: 2,
+                            useCORS: true,
+                            allowTaint: true,
+                            backgroundColor: '#EEF2F7',
+                            x: 0,
+                            y: 0,
+                            width: bounds.width,
+                            height: bounds.height,
+                            windowWidth: bounds.width,
+                            windowHeight: bounds.height,
+                            scrollX: 0,
+                            scrollY: 0,
+                            onclone: (clonedDoc) => {{
+                                const nodes = [
+                                    clonedDoc.documentElement,
+                                    clonedDoc.body,
+                                    clonedDoc.querySelector('.stApp'),
+                                    clonedDoc.querySelector('[data-testid="stAppViewContainer"]'),
+                                    clonedDoc.querySelector('.main'),
+                                ].filter(Boolean);
+
+                                for (const node of nodes) {{
+                                    node.style.overflow = 'visible';
+                                    node.style.height = 'auto';
+                                    node.style.maxHeight = 'none';
+                                }}
+                            }},
+                        }});
+
+                        const imgData = canvas.toDataURL('image/png', 1.0);
+                        const {{ jsPDF }} = window.jspdf;
+                        const pdf = new jsPDF({{ orientation: 'p', unit: 'mm', format: 'a4' }});
+                        const pageWidth = 210;
+                        const pageHeight = 297;
+                        const imgWidth = pageWidth;
+                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                        let heightLeft = imgHeight;
+                        let offsetY = 0;
+
+                        pdf.addImage(imgData, 'PNG', 0, offsetY, imgWidth, imgHeight, undefined, 'FAST');
+                        heightLeft -= pageHeight;
+
+                        while (heightLeft > 0) {{
+                            offsetY = -(imgHeight - heightLeft);
+                            pdf.addPage();
+                            pdf.addImage(imgData, 'PNG', 0, offsetY, imgWidth, imgHeight, undefined, 'FAST');
+                            heightLeft -= pageHeight;
+                        }}
+
+                        pdf.save('{file_name}');
+                    }} catch (e) {{
+                        alert('Error al generar PDF de captura: ' + e.message);
+                    }}
+                }})();
+                </script>
+                """,
+                height=0,
+                width=0,
+        )
 
 def draw_box(ax, origin, l, w, h, color='orange', alpha=1.0):
     x, y, z = origin
@@ -315,6 +476,7 @@ def main():
     """, unsafe_allow_html=True)
 
     col_left, col_right = st.columns([1.05, 1.35])
+    report_data = st.session_state.get('e3d_report_data')
 
     with col_left:
         # Transport type
@@ -409,6 +571,43 @@ def main():
 
             limited_by = "Weight" if realistic_ucm == max_ucm_by_weight else "Volume"
 
+            st.session_state.e3d_report_data = {
+                'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                'container_sel': container_sel,
+                'operative_dim': operative_dim,
+                'rotation': rotation,
+                'distribuciones': distribuciones,
+                'texto_dist': texto_dist,
+                'box_volume': box_volume,
+                'realistic_ucm': realistic_ucm,
+                'limited_by': limited_by,
+                'realistic_volume': realistic_volume,
+                'realistic_weight': realistic_weight,
+                'total_pn_ut': total_pn_ut,
+                'realistic_volume_sat': realistic_volume_sat,
+                'w_pct': w_pct,
+                'densidad': densidad,
+                'total_by_volume': total_by_volume,
+                'max_ucm_by_weight': max_ucm_by_weight,
+                'max_container_weight': max_container_weight,
+            }
+            report_data = st.session_state.e3d_report_data
+
+        if report_data:
+            rotation = report_data['rotation']
+            texto_dist = report_data['texto_dist']
+            box_volume = report_data['box_volume']
+            realistic_ucm = report_data['realistic_ucm']
+            limited_by = report_data['limited_by']
+            realistic_volume = report_data['realistic_volume']
+            realistic_weight = report_data['realistic_weight']
+            total_pn_ut = report_data['total_pn_ut']
+            realistic_volume_sat = report_data['realistic_volume_sat']
+            w_pct = report_data['w_pct']
+            densidad = report_data['densidad']
+            total_by_volume = report_data['total_by_volume']
+            max_ucm_by_weight = report_data['max_ucm_by_weight']
+
             # Hero metric
             st.markdown(f"""
             <div class="e3d-hero">
@@ -468,7 +667,11 @@ def main():
             """, unsafe_allow_html=True)
 
     with col_right:
-        if 'calculate' in locals() and calculate:
+        if report_data:
+            operative_dim = report_data['operative_dim']
+            rotation = report_data['rotation']
+            distribuciones = report_data['distribuciones']
+            realistic_ucm = report_data['realistic_ucm']
             st.markdown("""
             <div class="e3d-ch">
                 <div class="e3d-ch-title">3D UCM Distribution</div>
@@ -484,6 +687,15 @@ def main():
                 <div style="font-size:0.76rem;color:#CBD5E0;margin-top:6px;">3D visualization will appear here</div>
             </div>
             """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+    if st.button(
+        "Donwload PDF",
+        use_container_width=True,
+        disabled=not bool(report_data),
+        key='download_ui_pdf_button'
+    ):
+        _download_ui_screenshot_pdf('Empower3D_UI_screenshot.pdf')
 
 def run():
     main()
