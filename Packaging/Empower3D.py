@@ -695,7 +695,7 @@ def main():
         disabled=not bool(report_data),
         key='download_ui_pdf_button'
     ):
-        _download_ui_screenshot_pdf('Empower3D_UI_screenshot.pdf')
+        _download_ui_screenshot_pdf('Empower3D_screenshot.pdf')
 
 def run():
     main()
