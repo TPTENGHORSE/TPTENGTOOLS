@@ -31,6 +31,12 @@ def render_box(label, value):
     """
 
 
+def _vtt_summary_title_text():
+    pol_value = str(st.session_state.get('pol_select', 'Todos')).strip() or 'Todos'
+    pod_value = str(st.session_state.get('pod_select', 'Todos')).strip() or 'Todos'
+    return f'VTT SUMMARY - {pol_value}>{pod_value}'
+
+
 def _coerce_to_int(val):
     """Attempt to coerce various cell formats to an integer.
     Handles None/NaN, numeric strings with punctuation, and floats.
@@ -2114,7 +2120,7 @@ try:
     if max_days_kpi > 0:
         summary_ui_label_width = 200
         summary_ui_value_width = 50
-        kpi_gantt_html = "<div class='vtt-panel-scroll' style='margin-top:16px;'><div class='vtt-panel vtt-panel--timeline'><div class='vtt-panel__title'>VTT SUMMARY</div>"
+        kpi_gantt_html = f"<div class='vtt-panel-scroll' style='margin-top:16px;'><div class='vtt-panel vtt-panel--timeline'><div class='vtt-panel__title'>{_vtt_summary_title_text()}</div>"
         # Usar mismo tamaño base de fuente que la tabla superior
         kpi_gantt_html += "<div style='display:inline-block; width:max-content; min-width:100%'><table class='summary-table' style='border-collapse:collapse; width:auto; font-size:12px;'>"
 
@@ -2602,7 +2608,7 @@ def _build_snapshot_image(row, df_vtt, selected_pol, selected_pod, time_labels, 
         y += row_h
 
     y += section_gap
-    draw.text((margin, y), 'VTT SUMMARY', font=font_title, fill='#111111')
+    draw.text((margin, y), _vtt_summary_title_text(), font=font_title, fill='#111111')
     y += title_h
 
     x = summary_grid_left
@@ -3083,7 +3089,7 @@ def build_excel_workbook(row, df_vtt, selected_pol, selected_pod, time_labels, h
 
     # VTT SUMMARY block under the table (mirror of UI summary with mini-Gantt)
     rr = r + len(time_labels) + 2
-    ws.cell(row=rr, column=1, value='VTT SUMMARY').font = Font(bold=True, size=14)
+    ws.cell(row=rr, column=1, value=_vtt_summary_title_text()).font = Font(bold=True, size=14)
     rr += 1
 
     kpi_rows = _build_kpi_rows(row, df_vtt)
