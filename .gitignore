@@ -12,3 +12,5 @@ __pycache__/
 
 # Ignorar archivo temporal de ubicaciones CN que excede el limite de GitHub
 Quotations/CN.txt
+
+HorseLuis/

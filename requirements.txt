@@ -18,6 +18,7 @@ kiwisolver
 # git push
 
 #python -m streamlit run app.py
+#python -m streamlit run ".\VTT Tool\VTT2.py"
 #.venv\Scripts\pip install matplotlib
 
 #(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit
