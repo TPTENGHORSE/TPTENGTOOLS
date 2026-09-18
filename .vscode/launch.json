@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run generator (module)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "Quotations.generate_quote",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Quick test Leg1 (module)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "Quotations.quick_test_leg1",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "console": "integratedTerminal"
+    }
+  ]
+}

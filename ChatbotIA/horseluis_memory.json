@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "text": "HorseTPTBot",
+    "category": "general",
+    "priority": 3,
+    "confidence": 0.9,
+    "source": "manual",
+    "uses": 0,
+    "created_at": "2026-06-22T08:00:29Z",
+    "last_used": ""
+  }
+]
