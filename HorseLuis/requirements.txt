@@ -1,0 +1,27 @@
+streamlit==1.53.0
+requests
+pypdf
+plotly==6.5.2
+matplotlib==3.10.8
+openpyxl==3.1.5
+pillow==12.1.0
+pandas==2.3.3
+numpy==2.4.1
+py3dbp
+rapidfuzz
+pgeocode
+geopy>=2.4.1
+kiwisolver 
+
+# git add .
+# git commit -m "Describe tus cambios"
+# git push
+
+#python -m streamlit run app.py
+#python -m streamlit run ".\VTT Tool\VTT2.py"
+#.venv\Scripts\pip install matplotlib
+
+#(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit
+
+#Set-Location -Path "c:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis"; & ".\.venv\Scripts\python.exe" -m Quotations.generate_quote
+# POD DETENTION

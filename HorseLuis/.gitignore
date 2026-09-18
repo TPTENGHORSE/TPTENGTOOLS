@@ -1,0 +1,14 @@
+# Ignorar entorno virtual
+.venv/
+venv/
+
+# Ignorar archivos temporales
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.DS_Store
+
+# Ignorar archivo temporal de ubicaciones CN que excede el limite de GitHub
+Quotations/CN.txt
