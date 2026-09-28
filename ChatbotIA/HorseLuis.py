@@ -3,6 +3,7 @@ import importlib
 import json
 import os
 import re
+import sys
 from datetime import datetime
 
 import pandas as pd
@@ -12,6 +13,15 @@ import streamlit as st
 
 MEMORY_FILE = os.path.join(os.path.dirname(__file__), "horseluis_memory.json")
 DEFAULT_MODEL = "llama3"
+
+# Reuse the AirCalc airfreight rate engine (AirCalc/AirCalc.py) instead of duplicating its logic.
+_AIRCALC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "AirCalc"))
+if _AIRCALC_DIR not in sys.path:
+    sys.path.insert(0, _AIRCALC_DIR)
+try:
+    import AirCalc as aircalc  # noqa: E402
+except Exception:
+    aircalc = None
 
 
 def _chunk_text(text: str, size: int = 900, overlap: int = 150) -> list[str]:
@@ -310,6 +320,92 @@ def _compute_quote(distance_km: float, rate_per_km: float, fixed_cost: float, fu
     }
 
 
+def _airfreight_results_to_markdown(df: pd.DataFrame) -> str:
+    header = "| " + " | ".join(df.columns.astype(str)) + " |"
+    sep = "| " + " | ".join(["---"] * len(df.columns)) + " |"
+    rows = []
+    for _, row in df.iterrows():
+        cells = []
+        for col in df.columns:
+            val = row[col]
+            if col == "Total Airfreight":
+                cells.append(f"{val:,.0f} €")
+            elif col == "Eur/Kg":
+                cells.append(f"{val:,.2f}")
+            else:
+                cells.append(str(val))
+        rows.append("| " + " | ".join(cells) + " |")
+    return "\n".join([header, sep, *rows])
+
+
+def _airfreight_quote(origin: str, destin: str, weight: float, volume: float) -> str:
+    """Price a lane using the same rate engine as AirCalc/AirCalc.py (Calculator_v2)."""
+    if aircalc is None:
+        return "El motor de tarifas AirCalc no está disponible (no se pudo importar AirCalc.py)."
+    if not os.path.exists(aircalc.XLSM_PATH):
+        return f"No se encontró el fichero de tarifas: {aircalc.XLSM_PATH.name}"
+
+    rate_table = aircalc.load_rate_table()
+    dhl_adder = aircalc.load_dhl_adder()
+
+    lanes = rate_table[
+        (rate_table["Country Code"] == origin) & (rate_table["Country Code Destin"] == destin)
+    ]
+    if lanes.empty:
+        return f"No se encontraron lanes aéreos de {origin} a {destin}."
+
+    cbw = max(volume * 167, weight)
+    if cbw <= 0:
+        return "Indica peso (kg) y/o volumen (m3) para calcular la tarifa."
+
+    results = aircalc.compute_rates(lanes, cbw, dhl_adder)
+    results = results[list(aircalc.DISPLAY_COLUMNS.keys())].rename(columns=aircalc.DISPLAY_COLUMNS)
+    results["Service Level"] = results["Service Level"].str.title()
+    results["Lane Type"] = results["Lane Type"].str.title()
+    service_level_rank = results["Service Level"].map(aircalc.SERVICE_LEVEL_ORDER).fillna(
+        len(aircalc.SERVICE_LEVEL_ORDER)
+    )
+    lane_type_rank = results["Lane Type"].map(aircalc.LANE_TYPE_ORDER).fillna(len(aircalc.LANE_TYPE_ORDER))
+    results = (
+        results.assign(_slr=service_level_rank, _ltr=lane_type_rank)
+        .sort_values(["ILN/Supplier", "_ltr", "Origin Airport", "Destin Airport", "_slr"])
+        .drop(columns=["_slr", "_ltr"])
+        .reset_index(drop=True)
+    )
+
+    summary = f"**CBW (peso facturable):** {cbw:,.2f} kg — {origin} → {destin}\n\n"
+    return summary + _airfreight_results_to_markdown(results)
+
+
+_AIRFREIGHT_WEIGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*kg", re.IGNORECASE)
+_AIRFREIGHT_VOLUME_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:m3|m³|metros?\s*c[uú]bicos)", re.IGNORECASE)
+_AIRFREIGHT_ROUTE_RE = re.compile(
+    r"(?:de|desde|from|origen|origin)\s*[:\-]?\s*([a-zA-Z]{2})\b.{0,40}?"
+    r"(?:a|hacia|to|destino|destination)\s*[:\-]?\s*([a-zA-Z]{2})\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_airfreight_request(text: str, valid_origins: set, valid_destins: set) -> dict | None:
+    weight_match = _AIRFREIGHT_WEIGHT_RE.search(text)
+    volume_match = _AIRFREIGHT_VOLUME_RE.search(text)
+    if not weight_match and not volume_match:
+        return None
+
+    route_match = _AIRFREIGHT_ROUTE_RE.search(text)
+    if not route_match:
+        return None
+
+    origin = route_match.group(1).upper()
+    destin = route_match.group(2).upper()
+    if origin not in valid_origins or destin not in valid_destins:
+        return None
+
+    weight = float(weight_match.group(1).replace(",", ".")) if weight_match else 0.0
+    volume = float(volume_match.group(1).replace(",", ".")) if volume_match else 0.0
+    return {"origin": origin, "destin": destin, "weight": weight, "volume": volume}
+
+
 def run():
     st.markdown("## HorseLuis")
     st.caption("General assistant with long-term memory, PDF/doc grounding, and optional calculation tools")
@@ -397,6 +493,29 @@ def run():
                 {"role": "assistant", "content": tool_msg, "sources": ["quotation_tool"]}
             )
             st.success(f"Total: {quote['total']}")
+
+        st.divider()
+        st.subheader("Airfreight Tool (AirCalc)")
+        if aircalc is None or not os.path.exists(getattr(aircalc, "XLSM_PATH", "")):
+            st.caption("AirCalc rate file not found; airfreight quotes are disabled.")
+        else:
+            air_rate_table = aircalc.load_rate_table()
+            air_origin_options = sorted(air_rate_table["Country Code"].dropna().unique())
+            air_origin = st.selectbox("Origin Country", air_origin_options, key="air_origin")
+            air_destin_options = sorted(
+                air_rate_table.loc[
+                    air_rate_table["Country Code"] == air_origin, "Country Code Destin"
+                ].dropna().unique()
+            )
+            air_destin = st.selectbox("Destin Country", air_destin_options, key="air_destin")
+            air_weight = st.number_input("Weight (kg)", min_value=0.0, value=0.0, key="air_weight")
+            air_volume = st.number_input("Volume (m³)", min_value=0.0, value=0.0, step=0.1, key="air_volume")
+            if st.button("Calculate airfreight quote"):
+                air_msg = _airfreight_quote(air_origin, air_destin, air_weight, air_volume)
+                st.session_state["messages"].append(
+                    {"role": "assistant", "content": air_msg, "sources": ["AirCalc"]}
+                )
+                st.rerun()
 
         st.divider()
         st.subheader("Excel Tool")
@@ -513,6 +632,20 @@ def run():
 
     if user_input:
         st.session_state["messages"].append({"role": "user", "content": user_input})
+
+        if aircalc is not None and os.path.exists(getattr(aircalc, "XLSM_PATH", "")):
+            air_rate_table = aircalc.load_rate_table()
+            air_request = _extract_airfreight_request(
+                user_input,
+                set(air_rate_table["Country Code"].dropna().unique()),
+                set(air_rate_table["Country Code Destin"].dropna().unique()),
+            )
+            if air_request:
+                air_msg = _airfreight_quote(**air_request)
+                st.session_state["messages"].append(
+                    {"role": "assistant", "content": air_msg, "sources": ["AirCalc"]}
+                )
+                st.rerun()
 
         if _looks_like_doc_request(user_input) and not st.session_state["kb_chunks"]:
             bot_reply = (
