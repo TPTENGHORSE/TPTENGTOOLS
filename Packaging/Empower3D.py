@@ -16,7 +16,7 @@ DIMENSIONES_INTERNAS = {
 # Dimensiones operativas reales para cálculo de UCM
 DIMENSIONES_OPERATIVAS = {
     "Container 20 Ft Std": (5898, 2352, 2243),
-    "Container 40 HC": (12032, 2352, 2550),
+    "Container 40 HC": (12032, 2352, 2590),
     "Trailer 40m3": (7000, 2400, 2300),
     "Mega Trailer 90m3": (13620, 2480, 2900)
 }
@@ -607,6 +607,9 @@ def main():
             densidad = report_data['densidad']
             total_by_volume = report_data['total_by_volume']
             max_ucm_by_weight = report_data['max_ucm_by_weight']
+            max_container_weight = report_data['max_container_weight']
+            external_dim = DIMENSIONES_INTERNAS[report_data['container_sel']]
+            total_external_volume = (external_dim[0] / 1000) * (external_dim[1] / 1000) * (external_dim[2] / 1000)
 
             # Hero metric
             st.markdown(f"""
@@ -656,11 +659,11 @@ def main():
             st.markdown(f"""
             <div style="margin-top:10px">
               <div class="e3d-pw">
-                <div class="e3d-ph"><span>📦 Volume Saturation</span><span>{realistic_volume_sat:.1f}%</span></div>
+                <div class="e3d-ph"><span>📦 Volume Saturation ({total_external_volume:.2f} m³)</span><span>{realistic_volume_sat:.1f}%</span></div>
                 <div class="e3d-bg"><div class="e3d-fill" style="width:{v_cap:.1f}%;{bar_color(realistic_volume_sat)}"></div></div>
               </div>
               <div class="e3d-pw">
-                <div class="e3d-ph"><span>⚖️ Weight Saturation</span><span>{w_pct:.1f}%</span></div>
+                <div class="e3d-ph"><span>⚖️ Weight Saturation ({max_container_weight:,.0f} kg)</span><span>{w_pct:.1f}%</span></div>
                 <div class="e3d-bg"><div class="e3d-fill" style="width:{w_cap:.1f}%;{bar_color(w_pct)}"></div></div>
               </div>
             </div>

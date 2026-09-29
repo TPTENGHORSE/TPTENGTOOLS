@@ -20,7 +20,9 @@ kiwisolver
 #python -m streamlit run app.py
 #python -m streamlit run ".\VTT Tool\VTT2.py"
 #python -m streamlit run ".\ChatbotIA\HorseLuis.py"
-
+#python -m streamlit run ".\AirCalc\AirCalc.py"
+#python -m streamlit run ".\VTT Tool\ALL_VTT.py"
+#python -m streamlit run ".\Packaging\Empower3D.py"
 #.venv\Scripts\pip install matplotlib
 
 #(.venv) PS C:\Users\OLMEDOJorge\Documents\Python projects\Horse Luis> python -m pip install --upgrade pip python -m pip install streamlit
