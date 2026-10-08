@@ -10,7 +10,8 @@ DIMENSIONES_INTERNAS = {
     "Container 40 HC": (12032, 2352, 2700),
     "Container 20 Ft Std": (5898, 2352, 2393),
     "Trailer 40m3": (7000, 2400, 2400),
-    "Mega Trailer 90m3": (13620, 2480, 2900)
+    "Mega Trailer 90m3": (13620, 2480, 2900),
+    "India 32-ft MXL": (9700, 2300, 2200)
 }
 
 # Dimensiones operativas reales para cálculo de UCM
@@ -18,7 +19,8 @@ DIMENSIONES_OPERATIVAS = {
     "Container 20 Ft Std": (5898, 2352, 2243),
     "Container 40 HC": (12032, 2352, 2590),
     "Trailer 40m3": (7000, 2400, 2300),
-    "Mega Trailer 90m3": (13620, 2480, 2900)
+    "Mega Trailer 90m3": (13620, 2480, 2900),
+    "India 32-ft MXL": (9700, 2300, 2200)
 }
 
 # Peso máximo por contenedor
@@ -26,7 +28,8 @@ PESOS_MAXIMOS = {
     "Container 20 Ft Std": 25200,
     "Container 40 HC": 24750,
     "Trailer 40m3": 12000,
-    "Mega Trailer 90m3": 25000
+    "Mega Trailer 90m3": 25000,
+    "India 32-ft MXL": 21000
 }
 
 # Solo rotaciones permitidas en eje X e Y (altura fija)
