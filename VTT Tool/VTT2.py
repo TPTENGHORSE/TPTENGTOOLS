@@ -657,6 +657,14 @@ with top_section:
     if '_last_changed_filter' not in st.session_state:
         st.session_state['_last_changed_filter'] = None
 
+    # Deep link (e.g. from Horse_GL): ?id=<ID> preselects that row once; the ID cascade fills POL/POD/Shipper.
+    if not st.session_state.get('_deep_link_applied'):
+        st.session_state['_deep_link_applied'] = True
+        linked_id = st.query_params.get('id')
+        if linked_id and 'ID' in df_vtt.columns and linked_id in df_vtt['ID'].astype(str).tolist():
+            st.session_state['id_select'] = linked_id
+            st.session_state['_last_changed_filter'] = 'id_select'
+
     # POL stays global. POD cascades from POL. ID stays global so it never blocks later POL/POD changes.
     all_pol_options = [all_label] + (df_vtt['POL'].dropna().astype(str).unique().tolist() if 'POL' in df_vtt.columns else [])
     all_pod_options = [all_label] + (df_vtt['POD'].dropna().astype(str).unique().tolist() if 'POD' in df_vtt.columns else [])
