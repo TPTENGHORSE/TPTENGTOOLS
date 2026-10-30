@@ -32,7 +32,7 @@ SERVICE_LEVEL_PERCENTILE = 90
 def load_shipments() -> pd.DataFrame:
     cols = [
         "Container number", "POL", "POL - Country", "POL - Unlocode",
-        "POD", "POD - Country", "POD - Unlocode", "ATD", "ATA",
+        "POD", "POD - Country", "POD - Unlocode", "ATD", "ATA", "Carrier name",
     ]
     return pd.read_excel(DATA_PATH, sheet_name=SHEET_NAME, usecols=cols)
 
@@ -309,6 +309,53 @@ def _write_flow_formula_sheet(ws: Worksheet, flows: pd.DataFrame, last_raw_row: 
         )
 
 
+def _write_japan_brazil_sheet(ws: Worksheet, clean: pd.DataFrame) -> int:
+    """Japan -> Brazil shipments with carrier, ATD, ATA and transit days."""
+    jb = clean[
+        clean["POL - Country"].astype(str).str.contains("Japan", case=False)
+        & clean["POD - Country"].astype(str).str.contains("Brazil", case=False)
+    ].sort_values("ATD")
+    ws.append([
+        "Container number", "Carrier name", "POL", "POD", "POL - Unlocode",
+        "POD - Unlocode", "ATD", "ATA", "Transit Days",
+    ])
+    fields = ["Container number", "Carrier name", "POL", "POD", "POL - Unlocode", "POD - Unlocode"]
+    for r, (_, row) in enumerate(jb.iterrows(), start=2):
+        for c, f in enumerate(fields, start=1):
+            ws.cell(row=r, column=c, value=row[f])
+        ws.cell(row=r, column=7, value=row["ATD"]).number_format = "yyyy-mm-dd hh:mm"
+        ws.cell(row=r, column=8, value=row["ATA"]).number_format = "yyyy-mm-dd hh:mm"
+        ws.cell(row=r, column=9, value=f"=H{r}-G{r}").number_format = "0.00"
+
+    last = len(jb) + 1
+    carrier_rng = f"$B$2:$B${last}"
+    tt_rng = f"$I$2:$I${last}"
+    headers = ["Carrier name", "Shipments (n)", "Mean (days)", "Min (days)", "Max (days)", "P90 (days)"]
+    for c, h in enumerate(headers, start=11):
+        ws.cell(row=1, column=c, value=h)
+    carriers = sorted(jb["Carrier name"].dropna().unique()) + ["ALL CARRIERS"]
+    for r, carrier in enumerate(carriers, start=2):
+        ws.cell(row=r, column=11, value=carrier)
+        if carrier == "ALL CARRIERS":
+            vals = [
+                f"=COUNT({tt_rng})", f"=AVERAGE({tt_rng})", f"=MIN({tt_rng})",
+                f"=MAX({tt_rng})", f"=PERCENTILE({tt_rng},0.9)",
+            ]
+        else:
+            vals = [
+                f"=COUNTIFS({carrier_rng},K{r})",
+                f"=AVERAGEIFS({tt_rng},{carrier_rng},K{r})",
+                f"=MINIFS({tt_rng},{carrier_rng},K{r})",
+                f"=MAXIFS({tt_rng},{carrier_rng},K{r})",
+                ArrayFormula(f"P{r}", f"=PERCENTILE(IF({carrier_rng}=K{r},{tt_rng}),0.9)"),
+            ]
+        for c, v in enumerate(vals, start=12):
+            cell = ws.cell(row=r, column=c, value=v)
+            if c > 12:
+                cell.number_format = "0.0"
+    return len(jb)
+
+
 def write_formula_workbook(clean: pd.DataFrame, flows: pd.DataFrame, selected_flows: pd.DataFrame) -> None:
     wb = Workbook()
     raw_ws = wb.active
@@ -320,6 +367,9 @@ def write_formula_workbook(clean: pd.DataFrame, flows: pd.DataFrame, selected_fl
 
     selected_ws = wb.create_sheet("Selected Flows")
     _write_flow_formula_sheet(selected_ws, selected_flows, last_raw_row)
+
+    jb_ws = wb.create_sheet("Japan-Brazil")
+    _write_japan_brazil_sheet(jb_ws, clean)
 
     wb.save(OUTPUT_PATH)
 

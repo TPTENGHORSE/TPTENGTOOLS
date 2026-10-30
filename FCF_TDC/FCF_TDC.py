@@ -235,21 +235,20 @@ kpi3.metric(
 )
 
 st.subheader("Route business case")
-case_col1, case_col2, case_col3, case_col4 = st.columns(4)
+case_col1, case_col2, case_col3 = st.columns(3)
 case_col1.metric(
     "CLT reduction",
     f"{math.ceil(comparison['transit_time_reduction_days']):,} days",
     f"{math.ceil(comparison['transit_time_reduction_percent']):,}%",
 )
+_transport_delta = comparison["annual_transportation_savings"]
 case_col2.metric(
-    "Transportation savings (annual)",
-    money_up(comparison["annual_transportation_savings"], currency),
+    "Transportation savings (annual)"
+    if _transport_delta >= 0
+    else "Additional transport cost (annual)",
+    money_up(abs(_transport_delta), currency),
 )
 case_col3.metric(
-    "Additional transport cost (annual)",
-    money_up(-comparison["annual_transportation_savings"], currency),
-)
-case_col4.metric(
     "Financing-only break-even freight premium",
     money_up(comparison["maximum_freight_premium_per_container"], currency)
     + " / container",
@@ -309,10 +308,11 @@ with st.expander("Calculation breakdown & assumptions"):
     st.markdown(
         f"""
         - **Time basis:** Complete Customer Lead Time (CLT) of each scenario.
-        - **Pipeline inventory value:** cargo value × containers consumed per day × selected days.
+        - **Pipeline inventory value:** cargo value × containers consumed per day × CLT days.
         - **Working capital released:** annual volume ÷ plant working weeks × cargo value × (CLT reduction ÷ 7).
-        - **Per-container financing cost:** cargo value × selected annual rate × selected days ÷ {annual_days}.
+        - **Per-container financing cost:** cargo value × selected annual rate × CLT days ÷ {annual_days}.
         - **Annual financing cost:** pipeline inventory value × selected annual rate.
+        - **Annual financing savings:** (annual container volume ÷ days per year) × cargo value per container × CLT reduction (days) × selected annual rate.
         - **Transportation cost per container:** ocean freight + inland transportation + additional logistics.
         - **Net annual economic benefit:** Scenario A annual economic logistics cost − Scenario B annual economic logistics cost.
         - **Finance rate used:** {financing_rate:.2%} ({'inventory carrying cost' if use_carrying_rate else 'WACC'}).

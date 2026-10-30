@@ -1,0 +1,47 @@
+Resumen de Horse_GL
+
+Horse_GL es una aplicación web de Streamlit para consultar y visualizar flujos
+activos de transporte de Horse Global Logistics. Permite explorar los flujos por
+tipo y filtrar los resultados por país de origen (POL), país de destino (POD) y
+origen/proveedor. Muestra la información logística del flujo, pero no muestra
+datos de costes.
+
+Tipos de flujo y fuentes de datos
+
+- Airfreight: carga los datos en vivo desde la hoja "1_Consolidated_AIR" del
+  archivo "Airfreights Rates Calculator v2 Tender 2026.xlsm", ubicado en la
+  carpeta AirCalc, un nivel por encima de Guidelines. Agrupa las filas para
+  mostrar una sola entrada por ruta, sin duplicarlas por los niveles de servicio
+  Economy, Normal y Express. Para el tiempo de tránsito usa el nivel Normal
+  cuando está disponible y, si no, el menor tiempo registrado. Solo se
+  muestran las rutas con Lane Type "Main" y una única línea por flujo
+  (proveedor + país origen + país destino + planta), conservando la de menor
+  tiempo de tránsito. Los flujos se
+  clasifican como Inbound, Emergency y Parts. El país de destino se utiliza para
+  asignar la planta receptora cuando existe una correspondencia configurada.
+  También consulta la hoja "AIRFREIGHTS Invoice flow" de
+  Guidelines/Flows Cartography.xlsx y muestra el enlace de cartografía asociado
+  al eje (país de origen > país de destino). Cuando un eje tiene varios enlaces,
+  usa el proveedor/origen y la planta de destino para resolver la coincidencia;
+  si no puede determinar un enlace único, lo deja sin asignar e indica cuántos
+  flujos no tienen un enlace inequívoco.
+- Overseas: carga los datos de la hoja "budget 2026-2027" del archivo
+  Guidelines/Overseas.xlsx. Descarta las filas sin Flow, POL o POD y adapta
+  algunos nombres de columnas al formato común de la aplicación.
+- Inland: aún no está conectado a una base de datos; por ahora no devuelve
+  registros. Los valores POL/POD para este tipo están previstos como N/A.
+
+Uso de la aplicación
+
+1. Los flujos disponibles de Airfreight y Overseas se cargan juntos.
+2. Elegir opcionalmente un país de origen y/o un país de destino. Los códigos
+   de país de Airfreight se normalizan a nombres para que coincidan con los de
+   Overseas; la opción "All" no limita ese filtro.
+3. Consultar los flujos que coinciden, incluido el tiempo de tránsito en días
+   cuando está disponible. La tabla se ordena por país de origen, país de
+   destino y origen/proveedor. El encabezado indica el número de resultados.
+
+Los datos de Airfreight y Overseas se almacenan en caché con Streamlit para
+evitar recargarlos en cada interacción. Si no se encuentra el archivo de datos
+de una fuente, esta devuelve una tabla vacía y la aplicación muestra un aviso
+indicando que no hay datos disponibles para el tipo seleccionado.

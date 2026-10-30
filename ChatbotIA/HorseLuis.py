@@ -1,10 +1,13 @@
 import io
 import importlib
+import importlib.util
 import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -18,10 +21,45 @@ DEFAULT_MODEL = "llama3"
 _AIRCALC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "AirCalc"))
 if _AIRCALC_DIR not in sys.path:
     sys.path.insert(0, _AIRCALC_DIR)
+_AIRCALC_IMPORT_ERROR = None
 try:
     import AirCalc as aircalc  # noqa: E402
-except Exception:
+except Exception as exc:
     aircalc = None
+    _AIRCALC_IMPORT_ERROR = exc
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_INTEGRATED_MODULES = {}
+
+
+def _load_integrated_module(name: str, path: Path):
+    if name in _INTEGRATED_MODULES:
+        return _INTEGRATED_MODULES[name]
+    if not path.is_file():
+        raise FileNotFoundError(f"No se encontró la aplicación: {path}")
+
+    module_name = f"_horseluis_{name}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo cargar la aplicación: {path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    _INTEGRATED_MODULES[name] = module
+    return module
+
+
+@st.cache_data(show_spinner=False)
+def _load_vtt_data() -> pd.DataFrame:
+    data_path = _PROJECT_ROOT / "VTT Tool" / "VTT DATA.xlsx"
+    if not data_path.is_file():
+        raise FileNotFoundError(f"No se encontró el fichero de VTT: {data_path}")
+    return pd.read_excel(data_path)
 
 
 def _chunk_text(text: str, size: int = 900, overlap: int = 150) -> list[str]:
@@ -406,9 +444,392 @@ def _extract_airfreight_request(text: str, valid_origins: set, valid_destins: se
     return {"origin": origin, "destin": destin, "weight": weight, "volume": volume}
 
 
+def _normalize_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _mentions_any(text: str, phrases: tuple[str, ...]) -> bool:
+    normalized = _normalize_text(text)
+    return any(_normalize_text(phrase) in normalized for phrase in phrases)
+
+
+def _parse_number(value: str) -> float:
+    normalized = value.strip().replace(" ", "")
+    if "," in normalized and "." in normalized:
+        decimal_separator = "," if normalized.rfind(",") > normalized.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        normalized = normalized.replace(thousands_separator, "").replace(decimal_separator, ".")
+    elif "," in normalized:
+        trailing_digits = len(normalized) - normalized.rfind(",") - 1
+        normalized = normalized.replace(",", "" if trailing_digits == 3 else ".")
+    return float(normalized)
+
+
+def _labeled_number(text: str, labels: tuple[str, ...]) -> float | None:
+    number = r"([-+]?\d[\d.,]*)"
+    for label in sorted(labels, key=len, reverse=True):
+        pattern = rf"(?<!\w){re.escape(label)}(?!\w)\s*(?::|=|is|es)?\s*{number}"
+        match = re.search(pattern, _normalize_text(text), flags=re.IGNORECASE)
+        if match:
+            return _parse_number(match.group(1))
+    return None
+
+
+def _fcf_calculation_context(question: str) -> str:
+    calculations = _load_integrated_module(
+        "fcf_calculations", _PROJECT_ROOT / "FCF_TDC" / "calculations.py"
+    )
+    scenario_matches = list(
+        re.finditer(r"\b(?:escenario|scenario)\s*([ab])\b", question, flags=re.IGNORECASE)
+    )
+    scenario_text = {}
+    for index, match in enumerate(scenario_matches):
+        end = scenario_matches[index + 1].start() if index + 1 < len(scenario_matches) else len(question)
+        scenario_text[match.group(1).upper()] = question[match.start():end]
+
+    field_labels = {
+        "ocean": ("flete maritimo", "ocean freight", "ocean"),
+        "inland": ("transporte interior", "transporte terrestre", "inland transport", "inland"),
+        "other": ("logistica adicional", "coste adicional", "costo adicional", "additional logistics", "otros costes", "otros costos"),
+        "clt": ("lead time", "clt", "plazo total", "dias de entrega"),
+    }
+    values = {}
+    for scenario in ("A", "B"):
+        segment = scenario_text.get(scenario, "")
+        values[scenario] = {
+            name: _labeled_number(segment, labels)
+            for name, labels in field_labels.items()
+        }
+
+    cargo_value = _labeled_number(
+        question,
+        ("valor de carga por contenedor", "valor mercancia por contenedor", "cargo value per container", "valor por contenedor"),
+    )
+    annual_volume = _labeled_number(
+        question,
+        ("contenedores anuales", "volumen anual", "annual container volume", "volumen de contenedores"),
+    )
+    financing_rate = _labeled_number(
+        question, ("wacc", "tasa financiera", "annual financing rate", "tasa de financiacion")
+    )
+
+    context_lines = [
+        "FCF_TDC compara dos escenarios con las funciones calculate_scenario y calculate_comparison.",
+        "Entradas necesarias por escenario: flete marítimo, transporte interior, logística adicional y CLT en días.",
+        "Entradas globales: valor de carga por contenedor, volumen anual de contenedores y WACC/tasa anual.",
+        "Las salidas incluyen reducción de CLT, capital circulante liberado, ahorro anual de financiación, ahorro anual de transporte y beneficio económico anual neto.",
+    ]
+    required = all(
+        value is not None
+        for scenario in values.values()
+        for value in scenario.values()
+    ) and cargo_value is not None and annual_volume is not None and financing_rate is not None
+    if not required:
+        context_lines.append(
+            "No se ejecutó una comparación: faltan entradas explícitas. Pide solo los valores que falten; no inventes datos."
+        )
+        return "\n".join(context_lines)
+
+    if financing_rate > 1:
+        financing_rate /= 100
+    scenario_metrics = {}
+    for label in ("A", "B"):
+        inputs = values[label]
+        scenario = calculations.ScenarioInputs(
+            ocean_freight_per_container=inputs["ocean"],
+            inland_transport_per_container=inputs["inland"],
+            additional_logistics_per_container=inputs["other"],
+            customer_lead_time_days=inputs["clt"],
+        )
+        scenario_metrics[label] = calculations.calculate_scenario(
+            scenario,
+            cargo_value_per_container=cargo_value,
+            containers_consumed_per_day=annual_volume / calculations.DEFAULT_DAYS_PER_YEAR,
+            annual_container_volume=annual_volume,
+            annual_financing_rate=financing_rate,
+        )
+    comparison = calculations.calculate_comparison(
+        scenario_metrics["A"],
+        scenario_metrics["B"],
+        annual_container_volume=annual_volume,
+    )
+    context_lines.append(
+        "Cálculo ejecutado con los valores indicados "
+        f"(valor/contenedor={cargo_value:g}, contenedores/año={annual_volume:g}, "
+        f"tasa anual={financing_rate:.2%}; días/año={calculations.DEFAULT_DAYS_PER_YEAR})."
+    )
+    for label in ("A", "B"):
+        metrics = scenario_metrics[label]
+        context_lines.append(
+            f"Escenario {label}: CLT={metrics.analysis_days:g} días; "
+            f"coste de transporte/contenedor={metrics.transportation_cost_per_container:,.2f}; "
+            f"valor de inventario en tránsito={metrics.pipeline_inventory_value:,.2f}; "
+            f"coste económico anual total={metrics.annual_total_economic_cost:,.2f}."
+        )
+    context_lines.append(
+        "Comparación B frente a A: "
+        f"reducción CLT={comparison['transit_time_reduction_days']:,.2f} días; "
+        f"capital circulante liberado={comparison['working_capital_released']:,.2f}; "
+        f"ahorro anual de financiación={comparison['annual_financing_savings']:,.2f}; "
+        f"ahorro anual de transporte={comparison['annual_transportation_savings']:,.2f}; "
+        f"beneficio económico anual neto={comparison['net_annual_economic_benefit']:,.2f}."
+    )
+    return "\n".join(context_lines)
+
+
+def _empower_calculation_context(question: str) -> str:
+    empower = _load_integrated_module(
+        "empower3d", _PROJECT_ROOT / "Packaging" / "Empower3D.py"
+    )
+    container = None
+    normalized_question = _normalize_text(question)
+    for name in empower.DIMENSIONES_OPERATIVAS:
+        if _normalize_text(name) in normalized_question:
+            container = name
+            break
+    if container is None:
+        aliases = (
+            ("Mega Trailer 90m3", ("mega trailer", "90m3")),
+            ("Container 40 HC", ("40 hc", "40 high cube")),
+            ("Container 20 Ft Std", ("20 ft", "20ft", "20 pies")),
+            ("Trailer 40m3", ("trailer 40m3", "40 m3 trailer")),
+            ("India 32-ft MXL", ("india 32", "32-ft mxl")),
+        )
+        for name, terms in aliases:
+            if _mentions_any(question, terms) and name in empower.DIMENSIONES_OPERATIVAS:
+                container = name
+                break
+
+    dimensions_match = re.search(
+        r"(?<!\d)(\d{2,5})\s*(?:mm)?\s*[x×]\s*(\d{2,5})\s*(?:mm)?\s*[x×]\s*(\d{2,5})\s*(?:mm)?\b",
+        normalized_question,
+    )
+    pn_weight = _labeled_number(question, ("pn weight", "peso pn", "peso de la pieza", "peso pieza"))
+    ucm_weight = _labeled_number(question, ("ucm weight", "peso ucm", "peso del ucm", "tara ucm"))
+    pieces_per_ucm = _labeled_number(
+        question, ("pn/ucm", "piezas por ucm", "piezas/ucm", "parts per ucm")
+    )
+    if pieces_per_ucm is None:
+        pieces_match = re.search(
+            r"(\d+(?:[.,]\d+)?)\s*(?:piezas?|parts|pn)\s*(?:por|/)\s*ucm",
+            normalized_question,
+        )
+        if pieces_match:
+            pieces_per_ucm = _parse_number(pieces_match.group(1))
+    stacking = _labeled_number(question, ("stacking", "apilamiento", "capas"))
+
+    context_lines = [
+        "Empower3D calcula cuántas UCM caben por volumen usando la función calcula_cajas, "
+        "y limita el resultado por el peso máximo del contenedor.",
+        "Para calcular hacen falta tipo de contenedor, dimensiones de UCM (largo x ancho x alto en mm), "
+        "peso de PN (kg), peso de UCM vacía (kg) y PN/UCM. El apilamiento por defecto es 1 capa.",
+        "Dimensiones y pesos máximos de la aplicación: "
+        + "; ".join(
+            f"{name}: interior {empower.DIMENSIONES_INTERNAS[name]} mm, "
+            f"operativa {empower.DIMENSIONES_OPERATIVAS[name]} mm, "
+            f"peso máximo {empower.PESOS_MAXIMOS[name]} kg"
+            for name in empower.DIMENSIONES_INTERNAS
+        )
+        + ".",
+    ]
+    if (
+        container is None
+        or dimensions_match is None
+        or pn_weight is None
+        or ucm_weight is None
+        or pieces_per_ucm is None
+    ):
+        context_lines.append("No se ejecutó el cálculo porque faltan entradas explícitas.")
+        return "\n".join(context_lines)
+
+    box_dimensions = tuple(int(value) for value in dimensions_match.groups())
+    if min(box_dimensions) <= 0 or pn_weight <= 0 or ucm_weight < 0 or pieces_per_ucm <= 0:
+        raise ValueError("Las dimensiones, el peso de PN y PN/UCM deben ser positivos; el peso de UCM no puede ser negativo.")
+    if not pieces_per_ucm.is_integer():
+        raise ValueError("PN/UCM debe ser un número entero.")
+    max_stacking = int(stacking) if stacking is not None else 1
+    if stacking is not None and not stacking.is_integer():
+        raise ValueError("El número de capas de apilamiento debe ser entero.")
+    if max_stacking <= 0:
+        raise ValueError("El apilamiento debe ser de al menos 1 capa.")
+
+    operative_dimensions = empower.DIMENSIONES_OPERATIVAS[container]
+    capacity_by_volume, rotation, distribution = empower.calcula_cajas(
+        operative_dimensions, box_dimensions, 9999
+    )
+    max_stacking_possible = distribution[0][2]
+    capacity_by_volume, rotation, distribution = empower.calcula_cajas(
+        operative_dimensions, box_dimensions, min(max_stacking, max_stacking_possible)
+    )
+    box_weight = pn_weight * pieces_per_ucm + ucm_weight
+    if box_weight <= 0:
+        raise ValueError("El peso total de una UCM debe ser mayor que cero.")
+    max_by_weight = int(empower.PESOS_MAXIMOS[container] // box_weight)
+    realistic_ucm = min(capacity_by_volume, max_by_weight)
+    context_lines.append(
+        f"Cálculo Empower3D ejecutado: contenedor={container}; dimensiones UCM={box_dimensions} mm; "
+        f"peso UCM cargada={box_weight:,.3f} kg; orientación={rotation}; "
+        f"capacidad por volumen={capacity_by_volume}; capacidad por peso={max_by_weight}; "
+        f"capacidad final={realistic_ucm} UCM, limitada por "
+        f"{'peso' if realistic_ucm == max_by_weight else 'volumen'}; "
+        f"PN totales={int(pieces_per_ucm) * realistic_ucm}."
+    )
+    return "\n".join(context_lines)
+
+
+def _vtt_context(question: str) -> str:
+    data = _load_vtt_data()
+    preferred_columns = [
+        "ID",
+        "Destin Country",
+        "POL",
+        "POD",
+        "Carrier",
+        " Shipper",
+        "Transit time",
+        "9 ETD>ETA",
+        "15 Due Date",
+        "16 Manufacturing",
+        "Safety stock",
+        "Parts Vanning",
+        "Expiration Date",
+    ]
+    columns = [column for column in preferred_columns if column in data.columns]
+    query_tokens = _tokenize(question)
+    requested_id = re.search(r"\b[A-Z]\d{3}\b", question.upper())
+    scored_rows = []
+    for index, row in data.iterrows():
+        row_values = [str(row[column]) for column in columns if pd.notna(row[column])]
+        row_tokens = _tokenize(" ".join(row_values))
+        score = len(query_tokens & row_tokens)
+        if requested_id and str(row.get("ID", "")).upper() == requested_id.group(0):
+            score += 100
+        if score:
+            scored_rows.append((score, index, row))
+    scored_rows.sort(key=lambda item: item[0], reverse=True)
+
+    lines = [
+        f"VTT Tool: datos leídos de VTT DATA.xlsx ({len(data)} registros).",
+        "Campos consultados: ID, destino, POL, POD, carrier, shipper, transit time, ETD/ETA, due date, manufacturing y safety stock.",
+    ]
+    if not scored_rows:
+        lines.append("No se encontró ningún registro con coincidencia en estos datos para la consulta.")
+        return "\n".join(lines)
+
+    for _, _, row in scored_rows[:4]:
+        values = [
+            f"{column.strip()}: {row[column]}"
+            for column in columns
+            if pd.notna(row[column]) and str(row[column]).strip()
+        ]
+        lines.append("Registro: " + "; ".join(values))
+    return "\n".join(lines)
+
+
+def _aircalc_context(question: str) -> str:
+    if aircalc is None:
+        detail = f": {_AIRCALC_IMPORT_ERROR}" if _AIRCALC_IMPORT_ERROR else ""
+        raise ImportError(f"No se pudo importar AirCalc{detail}")
+    if not aircalc.XLSM_PATH.is_file():
+        raise FileNotFoundError(f"No se encontró el fichero de tarifas AirCalc: {aircalc.XLSM_PATH}")
+
+    rate_table = aircalc.load_rate_table()
+    route_match = _AIRFREIGHT_ROUTE_RE.search(question)
+    if route_match:
+        origin, destin = route_match.group(1).upper(), route_match.group(2).upper()
+        if (
+            origin in set(rate_table["Country Code"].dropna().unique())
+            and destin in set(rate_table["Country Code Destin"].dropna().unique())
+        ):
+            lanes = rate_table[
+                (rate_table["Country Code"] == origin)
+                & (rate_table["Country Code Destin"] == destin)
+            ]
+            if lanes.empty:
+                return f"AirCalc no tiene lanes para {origin} → {destin}."
+            return (
+                f"AirCalc usa CBW=max(volumen en m³ × 167, peso en kg) y el motor de tarifas del tender 2026. "
+                f"Para {origin} → {destin} hay {len(lanes)} lanes. "
+                "Detalle disponible: "
+                + "; ".join(
+                    ", ".join(
+                        f"{label}={row[column]}"
+                        for column, label in (
+                            ("Shipper/ILN", "ILN"),
+                            ("Type of Flow", "lane"),
+                            ("Service Level (Normal, Economy and Express)", "service"),
+                            ("Origin Airport", "origin airport"),
+                            ("Destination Airport", "destination airport"),
+                            ("Provider_Name", "carrier"),
+                            ("Total TT (days)", "transit days"),
+                        )
+                        if column in lanes.columns and pd.notna(row[column])
+                    )
+                    for _, row in lanes.head(8).iterrows()
+                )
+                + ". Para calcular el precio se necesitan peso y/o volumen."
+            )
+    return (
+        "AirCalc calcula peso facturable CBW=max(volumen en m³ × 167, peso en kg) "
+        "y aplica el motor de tarifas del tender 2026. Para una cotización indica "
+        "país de origen, país de destino y peso (kg) y/o volumen (m³)."
+    )
+
+
+def _integration_contexts(question: str) -> tuple[list[tuple[str, str]], list[str]]:
+    contexts = []
+    errors = []
+    integrations = [
+        (
+            "AirCalc",
+            ("aircalc", "airfreight", "air freight", "aereo", "vuelo", "tarifa aerea", "cotizacion aerea"),
+            _aircalc_context,
+        ),
+        (
+            "FCF_TDC",
+            ("fcf", "finanzas", "financiero", "wacc", "capital circulante", "ahorro", "escenario", "lead time", "clt", "coste logistico", "costo logistico", "coste de transporte", "costo de transporte", "working capital", "economic benefit"),
+            _fcf_calculation_context,
+        ),
+        (
+            "Empower3D",
+            ("empower3d", "packaging", "embalaje", "ucm", "caja", "palet", "pallet", "container 40", "container 20", "40 hc", "20 ft", "20ft", "40m3", "90m3", "32-ft mxl"),
+            _empower_calculation_context,
+        ),
+        (
+            "VTT Tool",
+            ("vtt", "pol", "pod", "transit time", "fecha de llegada", "due date", "etd", "eta", "shipper", "carrier", "ruta maritima"),
+            _vtt_context,
+        ),
+    ]
+    for source, triggers, context_builder in integrations:
+        is_vtt_id = source == "VTT Tool" and re.search(r"\b[A-Z]\d{3}\b", question.upper())
+        packaging_context = (
+            source == "Empower3D"
+            and _mentions_any(question, ("contenedor", "container"))
+            and (
+                not _mentions_any(
+                    question,
+                    ("fcf", "finanzas", "wacc", "flete", "coste", "costo", "ahorro", "escenario"),
+                )
+                or _mentions_any(question, ("dimensiones", "medidas", "cajas", "ucm", "peso"))
+            )
+        )
+        if not _mentions_any(question, triggers) and not is_vtt_id and not packaging_context:
+            continue
+        try:
+            contexts.append((source, context_builder(question)))
+        except Exception as exc:
+            errors.append(f"{source}: {type(exc).__name__}: {exc}")
+    return contexts, errors
+
+
 def run():
     st.markdown("## HorseLuis")
-    st.caption("General assistant with long-term memory, PDF/doc grounding, and optional calculation tools")
+    st.caption(
+        "Asistente con memoria, documentos y consultas conectadas a AirCalc, FCF_TDC, "
+        "Empower3D y VTT Tool."
+    )
 
     OLLAMA_URL = "http://localhost:11434/api/chat"
 
@@ -497,7 +918,7 @@ def run():
         st.divider()
         st.subheader("Airfreight Tool (AirCalc)")
         if aircalc is None or not os.path.exists(getattr(aircalc, "XLSM_PATH", "")):
-            st.caption("AirCalc rate file not found; airfreight quotes are disabled.")
+            st.caption("AirCalc no está disponible: revisa la importación y el fichero de tarifas.")
         else:
             air_rate_table = aircalc.load_rate_table()
             air_origin_options = sorted(air_rate_table["Country Code"].dropna().unique())
@@ -670,10 +1091,22 @@ def run():
                 )
                 _save_memory(st.session_state["memory_entries"])
 
+        integration_contexts, integration_errors = _integration_contexts(user_input)
+        for integration_error in integration_errors:
+            st.warning(f"No se pudo consultar una aplicación integrada: {integration_error}")
+
         retrieved = _retrieve(st.session_state["kb_chunks"], user_input, top_k=3)
         if not retrieved and st.session_state["kb_chunks"]:
             retrieved = _fallback_retrieve(st.session_state["kb_chunks"], top_k=3)
         context_blocks = [f"Source: {c['source']}\n{c['text']}" for c in retrieved]
+        context_blocks.extend(
+            f"Application source: {source}\n{context}"
+            for source, context in integration_contexts
+        )
+        if integration_errors:
+            context_blocks.extend(
+                f"Application source unavailable: {error}" for error in integration_errors
+            )
         context_text = "\n\n---\n\n".join(context_blocks)
         retrieved_memory = _retrieve_memory(st.session_state["memory_entries"], user_input, top_k=4)
         memory_text = "\n".join(f"- {m['text']}" for m in retrieved_memory)
@@ -682,15 +1115,19 @@ def run():
         if strict_docs_mode:
             system_prompt = (
                 "You are HorseLuis, a helpful assistant. "
-                "Use uploaded document context and long-term memory as primary evidence. "
-                "If the answer is not present in provided context or memory, say clearly that it was not found there."
+                "Use uploaded documents, integrated application context and long-term memory as primary evidence. "
+                "Treat application calculations and records as authoritative; do not invent missing values. "
+                "If a requested application source is unavailable, tell the user using its reported error. "
+                "If the answer is not present in the available context, say clearly that it was not found there."
             )
         else:
             system_prompt = (
                 "You are HorseLuis, a helpful general-purpose assistant. "
-                "Use uploaded document context and long-term memory when relevant, "
+                "Use uploaded documents, integrated application context and long-term memory when relevant, "
                 "but you can also answer general questions with your own model knowledge. "
-                "When documents are used, prefer them for specific factual details."
+                "When sources are used, prefer them for specific factual details. "
+                "Treat application calculations and records as authoritative; do not invent missing values. "
+                "If a requested application source is unavailable, report its error and do not guess."
             )
 
         user_prompt = user_input
@@ -698,7 +1135,7 @@ def run():
         if memory_text:
             prompt_parts.append("Long-term memory facts:\n" + memory_text)
         if context_text:
-            prompt_parts.append("Context from uploaded documents:\n" + context_text)
+            prompt_parts.append("Context from documents and connected applications:\n" + context_text)
         if prompt_parts:
             user_prompt = "\n\n".join(prompt_parts) + f"\n\nQuestion: {user_input}"
 
@@ -736,7 +1173,11 @@ def run():
             bot_reply = f"Error: {exc}"
             response_placeholder.markdown(bot_reply)
 
-        sources = sorted({c["source"] for c in retrieved})
+        sources = sorted(
+            {c["source"] for c in retrieved}
+            | {source for source, _ in integration_contexts}
+            | {error.split(":", 1)[0] for error in integration_errors}
+        )
         memory_ids_used = {int(m["id"]) for m in retrieved_memory}
         memories_used = [m["text"] for m in retrieved_memory]
         st.session_state["memory_entries"] = _mark_memories_used(
