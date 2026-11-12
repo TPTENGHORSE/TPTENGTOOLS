@@ -7,6 +7,7 @@ connected yet.
 """
 
 import heapq
+from html import escape
 import math
 from pathlib import Path
 from urllib.parse import quote
@@ -22,9 +23,6 @@ HEADER_ROW = 3  # 0-indexed row of the header inside the consolidated sheet (Exc
 FLOWS_CARTOGRAPHY_XLSX = Path(__file__).parent / "Flows Cartography.xlsx"
 CARTOGRAPHY_SHEET = "AIRFREIGHTS Invoice flow"
 
-OVERSEAS_XLSX = Path(__file__).parent / "Overseas.xlsx"
-OVERSEAS_SHEET = "budget 2026-2027"
-
 VTT_DATA_XLSX = Path(__file__).parent.parent / "VTT Tool" / "VTT DATA.xlsx"
 VTT_APP_URL = "https://horsetptengtools.streamlit.app/"
 
@@ -38,6 +36,54 @@ RECIPIENT_BY_COUNTRY = {
 }
 
 TYPE_COLORS = {"Airfreight": [0, 120, 255], "Overseas": [255, 140, 0]}
+
+# Display names for the UN/LOCODE ports and IATA airports used by active flows.
+LOCATION_NAMES = {
+    "ARBUE": "Buenos Aires",
+    "ARROS": "Rosario",
+    "BOM": "Chhatrapati Shivaji Maharaj International Airport (Mumbai)",
+    "BRPNG": "Paranaguá",
+    "CDG": "Paris-Charles de Gaulle Airport",
+    "CLSAI": "San Antonio",
+    "CNSHA": "Shanghai",
+    "COBUN": "Buenaventura",
+    "COCTG": "Cartagena",
+    "CWB": "Afonso Pena International Airport (Curitiba)",
+    "ESALG": "Algeciras",
+    "ESVLC": "Valencia",
+    "FRLEH": "Le Havre",
+    "GRU": "São Paulo/Guarulhos International Airport",
+    "HND": "Tokyo International Airport (Haneda)",
+    "ICN": "Incheon International Airport (Seoul)",
+    "INENR": "Ennore (Kamarajar Port)",
+    "INKAT": "Kattupalli",
+    "INMAA": "Chennai",
+    "INNSA": "Nhava Sheva (Jawaharlal Nehru Port)",
+    "IST": "Istanbul Airport",
+    "JPNGO": "Nagoya",
+    "JPSMZ": "Shimizu",
+    "JPYOK": "Yokohama",
+    "KRPUS": "Busan",
+    "MACAS": "Casablanca",
+    "MAD": "Adolfo Suárez Madrid-Barajas Airport",
+    "MAPTM": "Tanger Med",
+    "MEX": "Mexico City International Airport",
+    "MXATM": "Altamira",
+    "MXVER": "Veracruz",
+    "NGO": "Chubu Centrair International Airport (Nagoya)",
+    "NRT": "Narita International Airport (Tokyo)",
+    "OPO": "Francisco Sá Carneiro Airport (Porto)",
+    "OTP": "Henri Coandă International Airport (Bucharest)",
+    "PTLEI": "Leixões",
+    "PVG": "Shanghai Pudong International Airport",
+    "ROCND": "Constanța",
+    "SCL": "Arturo Merino Benítez International Airport (Santiago)",
+    "SIKOP": "Koper",
+    "TRGEM": "Gemlik",
+    "TRIZT": "İzmit",
+    "TRYAR": "Yarımca",
+    "YEI": "Bursa Yenişehir Airport",
+}
 
 # (longitude, latitude) of every airport/port code used by the flows.
 PORT_COORDINATES = {
@@ -151,26 +197,38 @@ COUNTRY_NAME_BY_CODE = {
     "IN": "India",
     "JP": "Japan",
     "KR": "Korea",
+    "CO": "Colombia",
+    "MA": "Morocco",
     "MX": "Mexico",
     "PT": "Portugal",
     "RO": "Romania",
+    "SI": "Slovenia",
     "TR": "Turkey",
 }
 
 CARTOGRAPHY_COLUMNS = [
-    "Type Flow", "Flow", "POL", "POL Country", "POD", "POD Country",
+    "Type Flow", "Flow", "POL", "POL Country", "POD", "POD Country", "Destin Plant",
     "Origin / ILN-Supplier", "Recipient", "Flow Type", "Commodity",
     "Carrier", "Transit Time (days)", "Customer Lead Time (days)", "Lane Type",
-    "Axis", "Carto No.", "Cartography Link", "VTT ID",
+    "Axis", "Carto No.", "Cartography Link", "VTT ID", "Purchase Incoterm",
+    "Operations Contact", "Transport Engineering Contact",
 ]
-COUNTRY_CODE_BY_NAME = {name.casefold(): code for code, name in COUNTRY_NAME_BY_CODE.items()}
+COUNTRY_CODE_BY_NAME = {
+    name.casefold(): code for code, name in COUNTRY_NAME_BY_CODE.items()
+}
+COUNTRY_CODE_BY_NAME.update({"south korea": "KR", "thailand": "TH"})
 
 
-@st.cache_data(show_spinner="Loading VTT customer lead times...")
-def load_vtt_customer_lead_times() -> pd.DataFrame:
-    """CLT per VTT row, computed as in VTT2.py: '14 Rounding' - '1 Day Customer Order' + 1."""
+@st.cache_data(show_spinner="Loading VTT flows...")
+def load_vtt_data() -> pd.DataFrame:
+    """Load overseas flows and customer lead times from VTT DATA."""
     if not VTT_DATA_XLSX.exists():
-        return pd.DataFrame(columns=["ID", "POL", "POD", "Shipper", "CLT"])
+        return pd.DataFrame(
+            columns=[
+                "ID", "POL", "POD", "Carrier", "Destin Country", "Destin Plant",
+                "Shipper", "CLT", "Flow Type", "Commodity", "Transit Time (days)",
+            ]
+        )
 
     df = pd.read_excel(VTT_DATA_XLSX)
     df.columns = [str(column).strip() for column in df.columns]
@@ -181,32 +239,41 @@ def load_vtt_customer_lead_times() -> pd.DataFrame:
     )
     for column in ("POL", "POD"):
         df[column] = df[column].astype(str).str.strip().str.upper()
-    df["Shipper"] = df["Shipper"].astype(str).str.strip().str.casefold()
-    df["ID"] = df["ID"].astype(str).str.strip()
-    return df.dropna(subset=["CLT"])[["ID", "POL", "POD", "Shipper", "CLT"]]
+    df["ID"] = df["ID"].map(lambda value: str(value).strip() if pd.notna(value) else None)
+    df["Shipper"] = df["Shipper"].map(
+        lambda value: str(value).strip() if pd.notna(value) else None
+    )
+    df["Destin Plant"] = df["Name Destin Site"].map(
+        lambda value: normalize_destination_site(value)
+    )
+    df["Destin Country"] = df["Destin Country"].map(
+        lambda value: str(value).strip().title() if pd.notna(value) else None
+    )
+    df["Flow Type"] = df["Flow Type"].map(
+        lambda value: str(value).strip().title() if pd.notna(value) else None
+    )
+    df["Commodity"] = df["Comodity"].map(
+        lambda value: str(value).strip().title() if pd.notna(value) else None
+    )
+    df["Transit Time (days)"] = pd.to_numeric(df["Transit time"], errors="coerce")
+    return df.dropna(subset=["POL", "POD", "Destin Plant"])[
+        [
+            "ID", "POL", "POD", "Carrier", "Destin Country", "Destin Plant",
+            "Shipper", "CLT", "Flow Type", "Commodity", "Transit Time (days)",
+        ]
+    ].reset_index(drop=True)
 
 
-def resolve_customer_lead_time(vtt: pd.DataFrame, pol, pod, origin) -> tuple[str | None, str | None]:
-    """POL + POD + Shipper match against the VTT.
-
-    Returns (CLT, VTT IDs). The CLT is None when the VTT holds conflicting values; the IDs list every matching row.
-    """
-    origin_key = normalize_match_value(origin)
-    # Horse/Renault plants appear in the VTT as "ILN <site>" shippers; named suppliers are matched by name.
-    if origin_key in ("horse plant", "renault iln"):
-        shipper_match = vtt["Shipper"].str.startswith("iln")
-    else:
-        shipper_match = vtt["Shipper"].str.contains(origin_key, regex=False)
-    matches = vtt[
-        (vtt["POL"] == str(pol).strip().upper())
-        & (vtt["POD"] == str(pod).strip().upper())
-        & shipper_match
-    ]
-    if matches.empty:
-        return None, None
-    values = matches["CLT"].unique()
-    clt = str(int(values[0])) if len(values) == 1 else None
-    return clt, ", ".join(matches["ID"])
+def normalize_destination_site(value: object) -> str | None:
+    if pd.isna(value):
+        return None
+    site = " ".join(str(value).split())
+    if not site:
+        return None
+    return {
+        "horse brasil": "Horse Brazil",
+        "horse valladolid": "Horse Motores",
+    }.get(site.casefold(), site)
 
 
 def normalize_axis(value: object) -> str:
@@ -230,30 +297,101 @@ def normalize_country(value: object) -> object:
 
 @st.cache_data(show_spinner="Loading cartography links...")
 def load_cartography_flows() -> pd.DataFrame:
-    columns = ["AXIS", "Shipper/ILN", "Destin Plant", "Carto No.", "Cartography Link"]
+    columns = [
+        "AXIS", "Origin Country", "Flow Type", "Shipper/ILN", "Destin Plant",
+        "Carto No.", "Cartography Link", "Purchase Incoterm",
+    ]
     if not FLOWS_CARTOGRAPHY_XLSX.exists():
         return pd.DataFrame(columns=columns)
 
     df = pd.read_excel(FLOWS_CARTOGRAPHY_XLSX, sheet_name=CARTOGRAPHY_SHEET)
+    df.columns = df.columns.map(lambda column: str(column).strip())
     # The number column header contains a non-ASCII "N°"; find it by its ending.
     number_column = next(c for c in df.columns if str(c).strip().endswith("Carto"))
     df = df.rename(columns={number_column: "Carto No."})[columns].dropna(subset=["AXIS", "Cartography Link"])
     df["Carto No."] = df["Carto No."].astype(str).str.strip()
     df["AXIS"] = df["AXIS"].map(normalize_axis)
+    df["Destin Plant"] = df["Destin Plant"].map(normalize_destination_site)
     df["Cartography Link"] = df["Cartography Link"].astype(str).str.strip()
     return df[df["Cartography Link"] != ""]
 
 
-def resolve_cartography_link(
+def matching_cartography_flow(
     axis: object,
     shipper: object,
     destination_plant: object,
     cartography: pd.DataFrame,
-) -> tuple[str | None, str | None]:
-    """Returns (Carto No., Cartography Link) for the Axis, narrowed by shipper and plant; (None, None) if ambiguous."""
+) -> pd.DataFrame:
+    matches = cartography[cartography["AXIS"] == normalize_axis(axis)]
+    shipper_key = normalize_match_value(shipper)
+    plant_key = normalize_match_value(normalize_destination_site(destination_plant))
+    if not shipper_key or not plant_key:
+        return matches.iloc[0:0]
+
+    shipper_matches = matches["Shipper/ILN"].map(normalize_match_value) == shipper_key
+    plant_matches = matches["Destin Plant"].map(
+        lambda value: normalize_match_value(normalize_destination_site(value))
+    ) == plant_key
+    return matches[shipper_matches & plant_matches]
+
+
+def cartography_reclassifies_origin(
+    pol: object,
+    axis: object,
+    shipper: object,
+    destination_plant: object,
+    cartography: pd.DataFrame,
+) -> bool:
+    pol_prefix = str(pol).strip().upper()[:2]
+    matches = matching_cartography_flow(axis, shipper, destination_plant, cartography)
+    origin_codes = [
+        COUNTRY_CODE_BY_NAME.get(str(country).strip().casefold())
+        for country in matches["Origin Country"].dropna()
+    ]
+    return bool(origin_codes) and all(
+        origin_code is not None and origin_code != pol_prefix
+        for origin_code in origin_codes
+    )
+
+
+def build_origin_country_map(
+    vtt_pols: pd.Series, cartography: pd.DataFrame
+) -> dict[str, str]:
+    """Combine VTT POL country codes with cartography origins as a fallback."""
+    vtt_prefixes = {
+        str(pol).strip().upper()[:2]
+        for pol in vtt_pols.dropna()
+        if str(pol).strip()
+    }
+    origin_by_prefix = {
+        prefix: COUNTRY_NAME_BY_CODE[prefix]
+        for prefix in vtt_prefixes
+        if prefix in COUNTRY_NAME_BY_CODE
+    }
+
+    if cartography.empty:
+        return origin_by_prefix
+
+    cartography_origins = cartography[["AXIS", "Origin Country"]].dropna()
+    cartography_origins = cartography_origins.assign(
+        _prefix=cartography_origins["AXIS"].str.split(">").str[0]
+    )
+    for prefix, origins in cartography_origins.groupby("_prefix")["Origin Country"]:
+        origin_names = origins.astype(str).str.strip().unique()
+        if prefix not in origin_by_prefix and len(origin_names) == 1:
+            origin_by_prefix[prefix] = origin_names[0]
+    return origin_by_prefix
+
+
+def resolve_cartography_matches(
+    axis: object,
+    shipper: object,
+    destination_plant: object,
+    cartography: pd.DataFrame,
+) -> pd.DataFrame:
     axis_key = normalize_axis(axis)
     if not axis_key or cartography.empty:
-        return None, None
+        return cartography.iloc[0:0]
 
     matches = cartography[cartography["AXIS"] == axis_key]
     for column, value in (
@@ -269,6 +407,17 @@ def resolve_cartography_link(
                 narrowed = matches[(keys == value_key) | keys.str.contains(value_key, regex=False)]
             if not narrowed.empty:
                 matches = narrowed
+    return matches
+
+
+def resolve_cartography_link(
+    axis: object,
+    shipper: object,
+    destination_plant: object,
+    cartography: pd.DataFrame,
+) -> tuple[str | None, str | None]:
+    """Returns (Carto No., Cartography Link) when the route resolves unambiguously."""
+    matches = resolve_cartography_matches(axis, shipper, destination_plant, cartography)
 
     matches = matches.drop_duplicates(["Carto No.", "Cartography Link"])
     return (matches["Carto No."].iloc[0], matches["Cartography Link"].iloc[0]) if len(matches) == 1 else (None, None)
@@ -298,19 +447,48 @@ def load_airfreight_flows() -> pd.DataFrame:
 
         # Prefer "Normal" service level as the representative transit time, else the fastest one.
         normal = g[g["Service Level (Normal, Economy and Express)"].str.title() == "Normal"]
-        transit_time = normal["Total TT (days)"].iloc[0] if not normal.empty else g["Total TT (days)"].min()
-
-        carto_no, carto_link = resolve_cartography_link(
-            f"{pol_country}>{pod_country}", shipper, destination_plant, cartography
+        transit_column = "Total Transit Door-to-Door (days)"
+        transit_time = (
+            normal[transit_column].iloc[0]
+            if not normal.empty
+            else g[transit_column].min()
         )
+
+        axis = f"{pol_country}>{pod_country}"
+        route_matches = matching_cartography_flow(
+            axis, shipper, destination_plant, cartography
+        )
+        cartography_origins = (
+            route_matches["Origin Country"].dropna().astype(str).str.strip().unique()
+        )
+        purchase_matches = resolve_cartography_matches(
+            axis, shipper, destination_plant, cartography
+        )
+        purchase_incoterms = (
+            purchase_matches["Purchase Incoterm"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .loc[lambda values: values.ne("")]
+            .unique()
+        )
+        purchase_incoterm = purchase_incoterms[0] if len(purchase_incoterms) == 1 else None
+        resolved_pol_country = (
+            cartography_origins[0] if len(cartography_origins) == 1 else pol_country
+        )
+        carto_no, carto_link = resolve_cartography_link(
+            axis, shipper, destination_plant, cartography
+        )
+
         records.append(
             {
                 "Type Flow": "Airfreight",
                 "Flow": "Inbound",  # AirCalc currently only carries supplier -> plant parts lanes.
                 "POL": pol,
-                "POL Country": pol_country,
+                "POL Country": resolved_pol_country,
                 "POD": pod,
                 "POD Country": pod_country,
+                "Destin Plant": normalize_destination_site(destination_plant),
                 "Origin / ILN-Supplier": shipper,
                 "Recipient": RECIPIENT_BY_COUNTRY.get(pod_country, f"N/A - Unmapped ({pod_country})"),
                 "Flow Type": "Emergency",
@@ -324,6 +502,9 @@ def load_airfreight_flows() -> pd.DataFrame:
                 "Carto No.": carto_no,
                 "Cartography Link": carto_link,
                 "VTT ID": None,
+                "Purchase Incoterm": purchase_incoterm,
+                "Operations Contact": None,
+                "Transport Engineering Contact": None,
             }
         )
 
@@ -339,34 +520,73 @@ def load_airfreight_flows() -> pd.DataFrame:
 
 @st.cache_data(show_spinner="Loading overseas flows...")
 def load_overseas_flows() -> pd.DataFrame:
-    if not OVERSEAS_XLSX.exists():
+    df = load_vtt_data()
+    if df.empty:
         return pd.DataFrame(columns=CARTOGRAPHY_COLUMNS)
 
-    df = pd.read_excel(OVERSEAS_XLSX, sheet_name=OVERSEAS_SHEET)
-    # The sheet has a continent-summary block below the real data; keep only actual flow rows.
-    df = df.dropna(subset=["Flow", "POL", "POD"])
-    df = df.rename(columns={"Origin": "Origin / ILN-Supplier", "Transit time": "Transit Time (days)"})
-    df["Type Flow"] = "Overseas"
-    vtt = load_vtt_customer_lead_times()
     cartography = load_cartography_flows()
-    clt_and_ids = [
-        resolve_customer_lead_time(vtt, pol, pod, origin)
-        for pol, pod, origin in zip(df["POL"], df["POD"], df["Origin / ILN-Supplier"])
-    ]
-    df["Customer Lead Time (days)"] = [clt for clt, _ in clt_and_ids]
-    df["VTT ID"] = [ids for _, ids in clt_and_ids]
-    df["Lane Type"] = None
-    # Airfreight is the emergency mode of the overseas flows, so they share the cartography of the same Axis.
     df["Axis"] = [
-        f"{COUNTRY_CODE_BY_NAME.get(str(pol).strip().casefold(), '')}>{COUNTRY_CODE_BY_NAME.get(str(pod).strip().casefold(), '')}"
-        for pol, pod in zip(df["POL Country"], df["POD Country"])
+        f"{str(pol).strip().upper()[:2]}>"
+        f"{COUNTRY_CODE_BY_NAME.get(str(pod_country).casefold(), '')}"
+        for pol, pod_country in zip(df["POL"], df["Destin Country"])
     ]
+    airfreight = load_airfreight_flows()
+    airfreight_keys = {
+        (
+            normalize_axis(axis),
+            normalize_match_value(shipper),
+            normalize_match_value(normalize_destination_site(plant)),
+        )
+        for axis, shipper, plant in zip(
+            airfreight["Axis"],
+            airfreight["Origin / ILN-Supplier"],
+            airfreight["Destin Plant"],
+        )
+    }
+    covered_by_air = [
+        (
+            normalize_axis(axis),
+            normalize_match_value(shipper),
+            normalize_match_value(normalize_destination_site(plant)),
+        )
+        in airfreight_keys
+        and matching_cartography_flow(axis, shipper, plant, cartography)["Flow Type"]
+        .astype(str).str.strip().str.casefold().eq("emergency").any()
+        and cartography_reclassifies_origin(
+            pol, axis, shipper, plant, cartography
+        )
+        for pol, axis, shipper, plant in zip(
+            df["POL"], df["Axis"], df["Shipper"], df["Destin Plant"]
+        )
+    ]
+    df = df.loc[~pd.Series(covered_by_air, index=df.index)].copy()
+    if df.empty:
+        return pd.DataFrame(columns=CARTOGRAPHY_COLUMNS)
+
+    df["Type Flow"] = "Overseas"
+    df["Purchase Incoterm"] = None
+    df["Operations Contact"] = None
+    df["Transport Engineering Contact"] = None
+    origin_country_by_prefix = build_origin_country_map(df["POL"], cartography)
+    df["POL Country"] = df["POL"].str[:2].map(origin_country_by_prefix)
+    df["POD Country"] = df["Destin Country"]
+    df["Flow"] = df["Destin Plant"].map(
+        lambda site: "Inbound" if site.casefold().startswith("horse ") else "Outbound"
+    )
+    df["Origin / ILN-Supplier"] = df["Shipper"]
+    df["Recipient"] = df["Destin Plant"]
+    df["VTT ID"] = df["ID"]
+    df["Customer Lead Time (days)"] = df["CLT"].map(
+        lambda value: str(int(value)) if pd.notna(value) else None
+    )
+    df["Lane Type"] = None
     carto = [
         resolve_cartography_link(axis, origin, None, cartography)
         for axis, origin in zip(df["Axis"], df["Origin / ILN-Supplier"])
     ]
     df["Carto No."] = [number for number, _ in carto]
     df["Cartography Link"] = [link for _, link in carto]
+    df["Carrier"] = df["Carrier"].fillna("Not available")
     return df[CARTOGRAPHY_COLUMNS]
 
 
@@ -375,25 +595,44 @@ def load_inland_flows() -> pd.DataFrame:
     return pd.DataFrame(columns=CARTOGRAPHY_COLUMNS)
 
 
-@st.cache_data(show_spinner="Loading active flows...")
+def ensure_flow_schema(flows: pd.DataFrame) -> pd.DataFrame:
+    """Add missing columns so partial flow sources retain the expected schema."""
+    for column in CARTOGRAPHY_COLUMNS:
+        if column not in flows.columns:
+            flows[column] = None
+    return flows
+
+
+def available_destination_plants(flows: pd.DataFrame) -> list[str]:
+    return sorted(
+        {
+            plant.strip()
+            for value in flows["Destin Plant"].dropna()
+            for plant in str(value).split(" | ")
+            if plant.strip()
+        },
+        key=str.casefold,
+    )
+
+
 def load_active_flows() -> pd.DataFrame:
-    # Combines flows and guarantees every expected column exists, even with stale cached sub-results.
+    # Recombine cached sources on each rerun so changes to either source are reflected.
     flows = pd.concat(
         [load_airfreight_flows(), load_overseas_flows()],
         ignore_index=True,
     )
+    flows = ensure_flow_schema(flows)
     for column in ("POL Country", "POD Country"):
         flows[column] = flows[column].map(normalize_country)
-    for column in ("Customer Lead Time (days)", "Carto No.", "VTT ID"):
-        if column not in flows.columns:
-            flows[column] = None
     return flows
 
 
 def main() -> None:
     st.set_page_config(page_title="Horse GL - Active Flows", page_icon="🌍", layout="wide")
     st.title("🌍 Horse Global Logistics - Active Flows Cartography")
-    st.caption("Select origin and destination countries to see available flows and transit times.")
+    st.caption(
+        "Select an origin country and destination plant to explore available transport flows and route details."
+    )
 
     flows = load_active_flows()
     if not FLOWS_CARTOGRAPHY_XLSX.exists():
@@ -405,95 +644,90 @@ def main() -> None:
         )
         return
 
-    st.subheader("Filters")
+    cartography = load_cartography_flows()
+    pol_countries = set(flows["POL Country"].dropna().map(normalize_country))
+    pol_countries.update(
+        cartography["Origin Country"]
+        .dropna()
+        .map(lambda country: normalize_country(str(country).strip()))
+    )
+    pol_countries = sorted(
+        (country for country in pol_countries if country),
+        key=str.casefold,
+    )
     col1, col2 = st.columns(2)
     with col1:
-        pol_countries = sorted(flows["POL Country"].dropna().unique())
         pol_country = st.selectbox("Origin Country", ["All"] + pol_countries)
-    with col2:
-        pod_countries = sorted(flows["POD Country"].dropna().unique())
-        pod_country = st.selectbox("Destination Country", ["All"] + pod_countries)
 
-    filtered = flows.copy()
+    origin_filtered = flows
     if pol_country != "All":
-        filtered = filtered[filtered["POL Country"] == pol_country]
-    if pod_country != "All":
-        filtered = filtered[filtered["POD Country"] == pod_country]
+        origin_filtered = flows[flows["POL Country"] == pol_country]
+    destination_sites = available_destination_plants(origin_filtered)
+    with col2:
+        destination_site = st.selectbox("Destin Plant", ["All"] + destination_sites)
 
-    without_link = filtered["Cartography Link"].isna()
-    if without_link.any():
-        st.caption(
-            f"{without_link.sum()} flow(s) have no unambiguous Cartography Link for their Axis."
-        )
+    filtered = origin_filtered.copy()
+    if destination_site != "All":
+        filtered = filtered[
+            filtered["Destin Plant"].fillna("").map(
+                lambda value: destination_site in value.split(" | ")
+            )
+        ]
 
     if filtered.empty:
-        st.info("No flows match the selected origin and destination countries.")
+        st.info("No flows match the selected origin country and destination site.")
         return
 
     filtered = filtered.sort_values(["POL Country", "POD Country", "Origin / ILN-Supplier"]).reset_index(drop=True)
 
-    tab_air, tab_ovs, tab_inland = st.tabs(["✈️ Airfreight", "🚢 Overseas", "🚚 Inland"])
-    with tab_air:
-        render_flow_tab(filtered[filtered["Type Flow"] == "Airfreight"], "air")
-    with tab_ovs:
-        render_flow_tab(filtered[filtered["Type Flow"] == "Overseas"], "ovs")
-    with tab_inland:
-        st.info("Inland flows: source not connected yet.")
-
-    with st.expander("Full table"):
-        st.dataframe(
-            filtered,
-            width="stretch",
-            column_config={
-                "Cartography Link": st.column_config.LinkColumn(
-                    "Cartography Link",
-                    display_text="Open cartography",
-                ),
-            },
-        )
+    flow_sections = [
+        ("🚢 Overseas", filtered[filtered["Type Flow"] == "Overseas"], "ovs"),
+        ("✈️ Airfreight", filtered[filtered["Type Flow"] == "Airfreight"], "air"),
+        ("🚚 Inland", filtered[filtered["Type Flow"] == "Inland"], "inland"),
+    ]
+    available_sections = [
+        (label, section_flows, key)
+        for label, section_flows, key in flow_sections
+        if not section_flows.empty
+    ]
+    tabs = st.tabs([label for label, _, _ in available_sections])
+    for tab, (_, section_flows, key) in zip(tabs, available_sections):
+        with tab:
+            if key == "inland":
+                st.info("Inland flows: source not connected yet.")
+            else:
+                render_flow_tab(section_flows, key)
 
 
 def render_flow_tab(flows: pd.DataFrame, key: str) -> None:
     flows = flows.reset_index(drop=True)
     state_key = f"route_{key}"
     render_cards(flows, state_key)
-    if flows.empty:
-        return
-
-    st.subheader("Route map")
     choice = st.session_state.get(state_key)
-    if choice is None or choice >= len(flows):
-        st.caption("Click “Show on map” on a flow card to see its route here.")
-        return
-
-    selected = flows.iloc[[choice]]
-    flow = selected.iloc[0]
-    label = f"{flow['POL']} → {flow['POD']} · {flow['Origin / ILN-Supplier']} · {na(flow['Carrier'])}"
-    color = TYPE_COLORS[flow["Type Flow"]]
-    style = "straight dotted line" if flow["Type Flow"] == "Airfreight" else "solid line along sea lanes"
-    st.markdown(
-        f"<span style='color:rgb({color[0]},{color[1]},{color[2]})'>&#9473;&#9473;</span> "
-        f"**{label}** ({style})",
-        unsafe_allow_html=True,
-    )
-    render_route_map(selected)
+    if choice is not None and 0 <= choice < len(flows):
+        render_route_map(flows.iloc[[choice]])
 
 
 def render_route_map(flows: pd.DataFrame) -> None:
     routes = flows[flows["POL"].isin(PORT_COORDINATES) & flows["POD"].isin(PORT_COORDINATES)]
     if routes.empty:
-        st.caption("No coordinates available to draw the routes.")
+        st.caption("No coordinates available to draw this route.")
         return
 
     records = []
-    for _, flow in routes.drop_duplicates(["POL", "POD", "Type Flow"]).iterrows():
-        label = f"{flow['POL']} → {flow['POD']} ({flow['Type Flow']})"
+    for _, flow in routes.iterrows():
+        label = f"{format_location(flow['POL'])} → {format_location(flow['POD'])}"
         color = TYPE_COLORS[flow["Type Flow"]]
         if flow["Type Flow"] == "Airfreight":
-            paths = dashed_segments(list(PORT_COORDINATES[flow["POL"]]), list(PORT_COORDINATES[flow["POD"]]))
+            paths = dashed_segments(
+                list(PORT_COORDINATES[flow["POL"]]),
+                list(PORT_COORDINATES[flow["POD"]]),
+            )
         else:
             paths = [sea_path(flow["POL"], flow["POD"])]
-        records.extend({"route": label, "path": path, "color": color} for path in paths)
+        records.extend(
+            {"route": label, "path": path, "color": color} for path in paths
+        )
 
     layer = pdk.Layer(
         "PathLayer",
@@ -512,13 +746,24 @@ def render_route_map(flows: pd.DataFrame) -> None:
         ),
         height=420,
     )
-    unmapped = sorted((set(flows["POL"]) | set(flows["POD"])) - set(PORT_COORDINATES))
-    if len(routes) < len(flows):
-        st.caption(f"{len(flows) - len(routes)} flow(s) not drawn: missing coordinates ({', '.join(unmapped)}).")
 
 
 def na(value: object) -> str:
     return "Not available" if value is None or pd.isna(value) else str(value)
+
+
+def format_days(value: object) -> str:
+    if value is None or pd.isna(value):
+        return "Not available"
+    return f"{float(value):.0f}"
+
+
+def format_location(code: object) -> str:
+    if code is None or pd.isna(code):
+        return "Not available"
+    code = str(code).strip()
+    name = LOCATION_NAMES.get(code.upper())
+    return f"{code} ({name})" if name else code
 
 
 def render_cards(flows: pd.DataFrame, state_key: str) -> None:
@@ -528,30 +773,63 @@ def render_cards(flows: pd.DataFrame, state_key: str) -> None:
 
     columns = st.columns(2)
     for position, (_, flow) in enumerate(flows.iterrows()):
-        is_selected = st.session_state.get(state_key) == position
         with columns[position % 2].container(border=True):
-            st.markdown(f"**{flow['POL']} → {flow['POD']}**  \n{flow['POL Country']} → {flow['POD Country']}")
-            st.caption(f"{na(flow['Origin / ILN-Supplier'])} ➜ {na(flow['Recipient'])} · {na(flow['Carrier'])}")
+            st.markdown(
+                f"**{format_location(flow['POL'])} → {format_location(flow['POD'])}**  \n"
+                f"{flow['POL Country']} → {flow['POD Country']}"
+            )
+            description = (
+                f"{na(flow['Origin / ILN-Supplier'])} ➜ "
+                f"{na(flow['Recipient'])} · {na(flow['Carrier'])}"
+            )
+            st.markdown(
+                f"<div style='color: #1976d2;'>{escape(description)}</div>",
+                unsafe_allow_html=True,
+            )
             metrics = st.columns(2)
-            metrics[0].metric("Transit (days)", na(flow["Transit Time (days)"]))
+            metrics[0].metric("Transit (days)", format_days(flow["Transit Time (days)"]))
             if flow["Type Flow"] == "Overseas":
                 metrics[1].metric("Customer lead time (days)", na(flow["Customer Lead Time (days)"]))
-                ids = [i.strip() for i in str(flow["VTT ID"]).split(",")] if pd.notna(flow["VTT ID"]) else []
-                if ids:
-                    links = ", ".join(f"[{i}]({VTT_APP_URL}?id={quote(i)})" for i in ids)
-                    st.markdown(f"VTT ID: {links}")
-                else:
-                    st.caption("VTT ID: Not available")
             tags = [flow["Lane Type"], flow["Flow"], flow["Flow Type"], flow["Commodity"]]
-            st.markdown(" ".join(f"`{tag}`" for tag in tags if tag is not None and pd.notna(tag)))
-            if pd.notna(flow["Cartography Link"]):
-                st.markdown(f"Cartography: [{flow['Carto No.']}]({flow['Cartography Link']})")
-            else:
-                st.caption("Cartography: Not available")
+            visible_tags = [str(tag) for tag in tags if tag is not None and pd.notna(tag)]
+            if visible_tags:
+                tag_markup = " ".join(
+                    (
+                        "<code style='color: #000; "
+                        "background-color: var(--secondary-background-color, #f0f2f6); "
+                        "padding: 0.2em 0.4em; border-radius: 0.25rem;'>"
+                        f"{escape(tag)}</code>"
+                    )
+                    for tag in visible_tags
+                )
+                st.markdown(tag_markup, unsafe_allow_html=True)
+            if flow["Type Flow"] == "Overseas":
+                cartography_column, vtt_column = st.columns(2)
+                with cartography_column:
+                    if pd.notna(flow["Cartography Link"]):
+                        st.markdown(f"Cartography: [{flow['Carto No.']}]({flow['Cartography Link']})")
+                    else:
+                        st.caption("Cartography: Not available")
+                ids = [i.strip() for i in str(flow["VTT ID"]).split(",")] if pd.notna(flow["VTT ID"]) else []
+                with vtt_column:
+                    if ids:
+                        links = ", ".join(f"[{i}]({VTT_APP_URL}?id={quote(i)})" for i in ids)
+                        st.markdown(f"VTT ID: {links}")
+                    else:
+                        st.caption("VTT ID: Not available")
+            st.markdown(
+                "<div style='color: #000;'>"
+                f"Purchase Incoterm: {escape(na(flow['Purchase Incoterm']))}<br>"
+                f"Operations Contact: {escape(na(flow['Operations Contact']))}<br>"
+                "Transport Engineering Contact: "
+                f"{escape(na(flow['Transport Engineering Contact']))}"
+                "</div>",
+                unsafe_allow_html=True,
+            )
             if st.button(
-                "📍 Showing on map" if is_selected else "🗺️ Show on map",
+                "📍 Showing on map" if st.session_state.get(state_key) == position else "🗺️ Show on map",
                 key=f"{state_key}_btn_{position}",
-                type="primary" if is_selected else "secondary",
+                type="primary" if st.session_state.get(state_key) == position else "secondary",
                 width="stretch",
             ):
                 st.session_state[state_key] = position
